@@ -54,7 +54,7 @@ public class SubjectController {
     private SubjectDto toDto(Subject subject) {
         String id = subject.getId().toString();
         return SubjectDto.builder()
-            ._id(id)
+            .id(id)
             .code(subject.getCode())
             .name(subject.getName())
             .description(subject.getDescription())
