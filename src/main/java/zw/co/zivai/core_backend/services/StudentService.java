@@ -46,7 +46,6 @@ public class StudentService {
     private StudentDto toStudentDto(User user, List<String> subjectIds) {
         String id = user.getId().toString();
         return StudentDto.builder()
-            ._id(id)
             .id(id)
             .firstName(user.getFirstName())
             .lastName(user.getLastName())

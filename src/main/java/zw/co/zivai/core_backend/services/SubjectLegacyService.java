@@ -32,7 +32,7 @@ public class SubjectLegacyService {
     private SubjectLegacyDto toSubjectLegacyDto(Subject subject) {
         String id = subject.getId().toString();
         return SubjectLegacyDto.builder()
-            ._id(id)
+            .id(id)
             .code(subject.getCode())
             .name(subject.getName())
             .description(subject.getDescription())
