@@ -35,6 +35,27 @@ public class AssessmentAttempt extends BaseEntity {
     @Column(name = "max_score")
     private Double maxScore;
 
+    @Column(name = "final_score")
+    private Double finalScore;
+
+    @Column(name = "final_grade")
+    private String finalGrade;
+
+    @Column(name = "submission_type")
+    private String submissionType;
+
+    @Column(name = "original_filename")
+    private String originalFilename;
+
+    @Column(name = "file_type")
+    private String fileType;
+
+    @Column(name = "file_size_bytes")
+    private Long fileSizeBytes;
+
+    @Column(name = "storage_path")
+    private String storagePath;
+
     @Column(name = "grading_status_code", nullable = false)
     private String gradingStatusCode;
 

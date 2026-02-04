@@ -23,6 +23,9 @@ public class Subject extends BaseEntity {
 
     private String description;
 
+    @Column(name = "subject_attributes")
+    private String subjectAttributes;
+
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 }

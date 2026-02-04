@@ -36,6 +36,9 @@ public class DataSeeder {
     CommandLineRunner seedUsers() {
         return args -> {
             seedEnrolmentStatuses();
+            seedAssessmentEnrollmentStatuses();
+            seedGradingStatuses();
+            seedQuestionTypes();
 
             Role student = roleRepository.findByCode("student")
                 .orElseGet(() -> roleRepository.save(buildRole("student", "Student")));
@@ -132,5 +135,36 @@ public class DataSeeder {
             "INSERT INTO lookups.enrolment_status (code, name) VALUES ('dropped', 'Dropped') ON CONFLICT (code) DO NOTHING");
         jdbcTemplate.update(
             "INSERT INTO lookups.enrolment_status (code, name) VALUES ('completed', 'Completed') ON CONFLICT (code) DO NOTHING");
+    }
+
+    private void seedAssessmentEnrollmentStatuses() {
+        jdbcTemplate.update(
+            "INSERT INTO lookups.assessment_enrollment_status (code, name) VALUES ('assigned', 'Assigned') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.assessment_enrollment_status (code, name) VALUES ('completed', 'Completed') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.assessment_enrollment_status (code, name) VALUES ('late', 'Late') ON CONFLICT (code) DO NOTHING");
+    }
+
+    private void seedGradingStatuses() {
+        jdbcTemplate.update(
+            "INSERT INTO lookups.grading_status (code, name) VALUES ('pending', 'Pending') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.grading_status (code, name) VALUES ('auto_graded', 'Auto Graded') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.grading_status (code, name) VALUES ('reviewed', 'Reviewed') ON CONFLICT (code) DO NOTHING");
+    }
+
+    private void seedQuestionTypes() {
+        jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('short_answer', 'Short Answer') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('structured', 'Structured') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('mcq', 'Multiple Choice') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('true_false', 'True/False') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('essay', 'Essay') ON CONFLICT (code) DO NOTHING");
     }
 }

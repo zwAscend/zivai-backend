@@ -30,6 +30,15 @@ public class AttemptAnswer extends BaseEntity {
     @Column(name = "student_answer_blob")
     private String studentAnswerBlob;
 
+    @Column(name = "submission_type")
+    private String submissionType;
+
+    @Column(name = "text_content")
+    private String textContent;
+
+    @Column(name = "external_assessment_data")
+    private String externalAssessmentData;
+
     @ManyToOne
     @JoinColumn(name = "handwriting_resource_id")
     private Resource handwritingResource;
