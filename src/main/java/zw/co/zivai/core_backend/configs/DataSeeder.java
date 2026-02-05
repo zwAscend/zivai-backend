@@ -11,16 +11,34 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.models.lms.ClassEntity;
 import zw.co.zivai.core_backend.models.lms.CalendarEvent;
+import zw.co.zivai.core_backend.models.lms.ClassSubject;
 import zw.co.zivai.core_backend.models.lms.Enrolment;
+import zw.co.zivai.core_backend.models.lms.Plan;
+import zw.co.zivai.core_backend.models.lms.PlanSkill;
+import zw.co.zivai.core_backend.models.lms.PlanStep;
+import zw.co.zivai.core_backend.models.lms.PlanSubskill;
 import zw.co.zivai.core_backend.models.lms.School;
+import zw.co.zivai.core_backend.models.lms.Skill;
+import zw.co.zivai.core_backend.models.lms.StudentAttribute;
+import zw.co.zivai.core_backend.models.lms.StudentPlan;
+import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
 import zw.co.zivai.core_backend.models.lms.Subject;
 import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.models.lookups.Role;
 import zw.co.zivai.core_backend.repositories.ClassRepository;
+import zw.co.zivai.core_backend.repositories.ClassSubjectRepository;
 import zw.co.zivai.core_backend.repositories.CalendarEventRepository;
 import zw.co.zivai.core_backend.repositories.EnrolmentRepository;
+import zw.co.zivai.core_backend.repositories.PlanRepository;
+import zw.co.zivai.core_backend.repositories.PlanSkillRepository;
+import zw.co.zivai.core_backend.repositories.PlanStepRepository;
+import zw.co.zivai.core_backend.repositories.PlanSubskillRepository;
 import zw.co.zivai.core_backend.repositories.RoleRepository;
 import zw.co.zivai.core_backend.repositories.SchoolRepository;
+import zw.co.zivai.core_backend.repositories.SkillRepository;
+import zw.co.zivai.core_backend.repositories.StudentAttributeRepository;
+import zw.co.zivai.core_backend.repositories.StudentPlanRepository;
+import zw.co.zivai.core_backend.repositories.StudentSubjectEnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.SubjectRepository;
 import zw.co.zivai.core_backend.repositories.UserRepository;
 
@@ -33,8 +51,17 @@ public class DataSeeder {
     private final SchoolRepository schoolRepository;
     private final SubjectRepository subjectRepository;
     private final ClassRepository classRepository;
+    private final ClassSubjectRepository classSubjectRepository;
     private final EnrolmentRepository enrolmentRepository;
     private final CalendarEventRepository calendarEventRepository;
+    private final SkillRepository skillRepository;
+    private final StudentAttributeRepository studentAttributeRepository;
+    private final PlanRepository planRepository;
+    private final PlanStepRepository planStepRepository;
+    private final PlanSkillRepository planSkillRepository;
+    private final PlanSubskillRepository planSubskillRepository;
+    private final StudentPlanRepository studentPlanRepository;
+    private final StudentSubjectEnrolmentRepository studentSubjectEnrolmentRepository;
     private final PasswordEncoder passwordEncoder;
 
     private static final String DEFAULT_SEEDED_PASSWORD = "TempPass123!";
@@ -76,6 +103,9 @@ public class DataSeeder {
             seedSubject("ENG", "English Language", "Reading, writing, and comprehension");
             seedSubject("PHY", "Physics", "Mechanics, waves, and electricity");
 
+            Subject mathSubject = subjectRepository.findByCode("MATH").orElse(null);
+            Subject engSubject = subjectRepository.findByCode("ENG").orElse(null);
+
             if (teacherUser != null) {
                 ClassEntity classEntity = classRepository.findByCode("FORM2-A")
                     .orElseGet(() -> {
@@ -98,10 +128,23 @@ public class DataSeeder {
                     enrolment.setEnrolmentStatusCode("active");
                         enrolmentRepository.save(enrolment);
                 }
+
+                if (mathSubject != null) {
+                    ClassSubject mathLink = seedClassSubject(school, classEntity, mathSubject, teacherUser, "2026", "Term 1");
+                    seedStudentSubjectEnrolment(studentUser, mathLink);
+                }
+                if (engSubject != null) {
+                    ClassSubject engLink = seedClassSubject(school, classEntity, engSubject, teacherUser, "2026", "Term 1");
+                    seedStudentSubjectEnrolment(studentUser, engLink);
+                }
             }
 
             if (teacherUser != null) {
                 seedCalendarEvents(school, teacherUser);
+            }
+
+            if (studentUser != null) {
+                seedDevelopmentData(mathSubject, engSubject, studentUser);
             }
         };
     }
@@ -208,6 +251,204 @@ public class DataSeeder {
         quiz.setLocation("Room 101");
         quiz.setCreatedBy(teacher);
         calendarEventRepository.save(quiz);
+    }
+
+    private void seedDevelopmentData(Subject math, Subject eng, User student) {
+        if (math == null || eng == null) {
+            return;
+        }
+
+        Skill algebra = seedSkill(math, "ALG", "Algebra Fundamentals", "Linear equations and expressions");
+        Skill geometry = seedSkill(math, "GEO", "Geometry Basics", "Angles, shapes, and measurement");
+        Skill statistics = seedSkill(math, "STAT", "Statistics", "Mean, median, and probability");
+        Skill comprehension = seedSkill(eng, "COMP", "Comprehension", "Reading and interpretation");
+        Skill writing = seedSkill(eng, "WRIT", "Writing Skills", "Grammar and structured writing");
+
+        seedStudentAttribute(student, algebra, 62.0, 82.0);
+        seedStudentAttribute(student, geometry, 68.0, 84.0);
+        seedStudentAttribute(student, statistics, 55.0, 78.0);
+        seedStudentAttribute(student, comprehension, 72.0, 86.0);
+        seedStudentAttribute(student, writing, 65.0, 83.0);
+
+        if (planRepository.findBySubject_Id(math.getId()).isEmpty()) {
+            Plan mathPlan = new Plan();
+            mathPlan.setSubject(math);
+            mathPlan.setName("Math Growth Plan");
+            mathPlan.setDescription("Focus on algebra and geometry fundamentals.");
+            mathPlan.setProgress(0.0);
+            mathPlan.setPotentialOverall(85.0);
+            mathPlan.setEtaDays(30);
+            mathPlan.setPerformance("Average");
+            mathPlan = planRepository.save(mathPlan);
+
+            PlanSkill algebraSkill = seedPlanSkill(mathPlan, algebra.getName(), 85.0);
+            seedPlanSubskill(algebraSkill, "Linear equations", 60.0, "yellow");
+            seedPlanSubskill(algebraSkill, "Simplifying expressions", 55.0, "yellow");
+
+            PlanSkill geometrySkill = seedPlanSkill(mathPlan, geometry.getName(), 82.0);
+            seedPlanSubskill(geometrySkill, "Angles and triangles", 65.0, "yellow");
+            seedPlanSubskill(geometrySkill, "Area and perimeter", 60.0, "yellow");
+
+            seedPlanStep(mathPlan, "Review algebra basics", "reading", 1, "https://example.com/algebra");
+            seedPlanStep(mathPlan, "Practice geometry drills", "exercise", 2, null);
+            seedPlanStep(mathPlan, "Weekly mastery quiz", "assessment", 3, null);
+
+            seedStudentPlan(student, mathPlan, math);
+        }
+
+        if (planRepository.findBySubject_Id(eng.getId()).isEmpty()) {
+            Plan engPlan = new Plan();
+            engPlan.setSubject(eng);
+            engPlan.setName("English Mastery Plan");
+            engPlan.setDescription("Improve comprehension and writing fluency.");
+            engPlan.setProgress(0.0);
+            engPlan.setPotentialOverall(88.0);
+            engPlan.setEtaDays(28);
+            engPlan.setPerformance("Good");
+            engPlan = planRepository.save(engPlan);
+
+            PlanSkill compSkill = seedPlanSkill(engPlan, comprehension.getName(), 88.0);
+            seedPlanSubskill(compSkill, "Inference", 70.0, "yellow");
+            seedPlanSubskill(compSkill, "Summary writing", 65.0, "yellow");
+
+            PlanSkill writingSkill = seedPlanSkill(engPlan, writing.getName(), 90.0);
+            seedPlanSubskill(writingSkill, "Essay structure", 68.0, "yellow");
+            seedPlanSubskill(writingSkill, "Grammar practice", 72.0, "yellow");
+
+            seedPlanStep(engPlan, "Read short story", "reading", 1, null);
+            seedPlanStep(engPlan, "Write a paragraph response", "assignment", 2, null);
+            seedPlanStep(engPlan, "Weekly feedback session", "meeting", 3, null);
+
+            seedStudentPlan(student, engPlan, eng);
+        }
+    }
+
+    private Skill seedSkill(Subject subject, String code, String name, String description) {
+        return skillRepository.findBySubject_IdAndCode(subject.getId(), code)
+            .orElseGet(() -> {
+                Skill skill = new Skill();
+                skill.setSubject(subject);
+                skill.setCode(code);
+                skill.setName(name);
+                skill.setDescription(description);
+                return skillRepository.save(skill);
+            });
+    }
+
+    private ClassSubject seedClassSubject(
+        School school,
+        ClassEntity classEntity,
+        Subject subject,
+        User teacher,
+        String academicYear,
+        String term
+    ) {
+        if (school == null || classEntity == null || subject == null) {
+            return null;
+        }
+        return classSubjectRepository.findByClassEntity_IdAndDeletedAtIsNull(classEntity.getId()).stream()
+            .filter(link -> link.getSubject() != null && link.getSubject().getId().equals(subject.getId()))
+            .findFirst()
+            .orElseGet(() -> {
+                ClassSubject classSubject = new ClassSubject();
+                classSubject.setSchool(school);
+                classSubject.setClassEntity(classEntity);
+                classSubject.setSubject(subject);
+                classSubject.setTeacher(teacher);
+                classSubject.setAcademicYear(academicYear);
+                classSubject.setTerm(term);
+                classSubject.setName(subject.getName());
+                classSubject.setActive(true);
+                return classSubjectRepository.save(classSubject);
+            });
+    }
+
+    private void seedStudentSubjectEnrolment(User student, ClassSubject classSubject) {
+        if (student == null || classSubject == null) {
+            return;
+        }
+        boolean exists = studentSubjectEnrolmentRepository
+            .findByStudent_IdAndDeletedAtIsNull(student.getId())
+            .stream()
+            .anyMatch(enrolment -> enrolment.getClassSubject() != null
+                && enrolment.getClassSubject().getId().equals(classSubject.getId()));
+        if (exists) {
+            return;
+        }
+        StudentSubjectEnrolment enrolment = new StudentSubjectEnrolment();
+        enrolment.setStudent(student);
+        enrolment.setClassSubject(classSubject);
+        enrolment.setStatusCode("active");
+        studentSubjectEnrolmentRepository.save(enrolment);
+    }
+
+    private void seedStudentAttribute(User student, Skill skill, double current, double potential) {
+        if (studentAttributeRepository.findByStudent_IdAndSkill_Id(student.getId(), skill.getId()).isPresent()) {
+            return;
+        }
+        StudentAttribute attribute = new StudentAttribute();
+        attribute.setStudent(student);
+        attribute.setSkill(skill);
+        attribute.setCurrentScore(current);
+        attribute.setPotentialScore(potential);
+        attribute.setLastAssessed(java.time.Instant.now());
+        studentAttributeRepository.save(attribute);
+    }
+
+    private PlanSkill seedPlanSkill(Plan plan, String name, Double score) {
+        PlanSkill planSkill = new PlanSkill();
+        planSkill.setPlan(plan);
+        planSkill.setName(name);
+        planSkill.setScore(score);
+        return planSkillRepository.save(planSkill);
+    }
+
+    private void seedPlanSubskill(PlanSkill planSkill, String name, Double score, String color) {
+        PlanSubskill subskill = new PlanSubskill();
+        subskill.setPlanSkill(planSkill);
+        subskill.setName(name);
+        subskill.setScore(score);
+        subskill.setColor(color);
+        planSubskillRepository.save(subskill);
+    }
+
+    private void seedPlanStep(Plan plan, String title, String type, int order, String link) {
+        PlanStep step = new PlanStep();
+        step.setPlan(plan);
+        step.setTitle(title);
+        step.setStepType(normalizePlanStepType(type));
+        step.setStepOrder(order);
+        step.setLink(link);
+        planStepRepository.save(step);
+    }
+
+    private void seedStudentPlan(User student, Plan plan, Subject subject) {
+        if (studentPlanRepository.findFirstByStudent_IdAndSubject_IdAndCurrentTrue(student.getId(), subject.getId()).isPresent()) {
+            return;
+        }
+        StudentPlan studentPlan = new StudentPlan();
+        studentPlan.setStudent(student);
+        studentPlan.setPlan(plan);
+        studentPlan.setSubject(subject);
+        studentPlan.setStartDate(java.time.Instant.now());
+        studentPlan.setCurrentProgress(10.0);
+        studentPlan.setStatus("active");
+        studentPlan.setCurrent(true);
+        studentPlanRepository.save(studentPlan);
+    }
+
+    private String normalizePlanStepType(String value) {
+        if (value == null || value.isBlank()) {
+            return "document";
+        }
+        String normalized = value.trim().toLowerCase();
+        return switch (normalized) {
+            case "video", "document", "assessment", "discussion" -> normalized;
+            case "reading", "resource", "notes" -> "document";
+            case "exercise", "practice", "quiz", "assignment", "test" -> "assessment";
+            case "meeting", "collaboration", "group" -> "discussion";
+            default -> "document";
+        };
     }
 
 

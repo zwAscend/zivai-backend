@@ -17,12 +17,14 @@ import zw.co.zivai.core_backend.dtos.CalendarEventDto;
 import zw.co.zivai.core_backend.dtos.CalendarEventRequest;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.models.lms.CalendarEvent;
+import zw.co.zivai.core_backend.models.lms.ClassSubject;
 import zw.co.zivai.core_backend.models.lms.ClassEntity;
 import zw.co.zivai.core_backend.models.lms.School;
 import zw.co.zivai.core_backend.models.lms.Subject;
 import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.repositories.CalendarEventRepository;
 import zw.co.zivai.core_backend.repositories.ClassRepository;
+import zw.co.zivai.core_backend.repositories.ClassSubjectRepository;
 import zw.co.zivai.core_backend.repositories.SchoolRepository;
 import zw.co.zivai.core_backend.repositories.SubjectRepository;
 import zw.co.zivai.core_backend.repositories.UserRepository;
@@ -34,6 +36,7 @@ public class CalendarEventService {
     private final SchoolRepository schoolRepository;
     private final SubjectRepository subjectRepository;
     private final ClassRepository classRepository;
+    private final ClassSubjectRepository classSubjectRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
 
@@ -81,13 +84,6 @@ public class CalendarEventService {
     }
 
     private void applyRequest(CalendarEvent event, CalendarEventRequest request) {
-        if (event.getSchool() == null) {
-            event.setSchool(resolveSchool());
-        }
-        if (event.getCreatedBy() == null) {
-            event.setCreatedBy(resolveUser());
-        }
-
         event.setTitle(request.getTitle());
         event.setDescription(request.getDescription());
         event.setStartTime(parseInstant(request.getStart()));
@@ -96,20 +92,29 @@ public class CalendarEventService {
         event.setEventType("lecture".equalsIgnoreCase(request.getType()) ? "lesson" : request.getType());
         event.setLocation(request.getLocation());
 
+        Subject subject = null;
         if (request.getSubjectId() != null && !request.getSubjectId().isBlank()) {
-            Subject subject = subjectRepository.findById(UUID.fromString(request.getSubjectId()))
+            subject = subjectRepository.findById(UUID.fromString(request.getSubjectId()))
                 .orElseThrow(() -> new NotFoundException("Subject not found: " + request.getSubjectId()));
             event.setSubject(subject);
         } else {
             event.setSubject(null);
         }
 
+        ClassEntity classEntity = null;
         if (request.getClassId() != null && !request.getClassId().isBlank()) {
-            ClassEntity classEntity = classRepository.findById(UUID.fromString(request.getClassId()))
+            classEntity = classRepository.findById(UUID.fromString(request.getClassId()))
                 .orElseThrow(() -> new NotFoundException("Class not found: " + request.getClassId()));
             event.setClassEntity(classEntity);
         } else {
             event.setClassEntity(null);
+        }
+
+        if (event.getSchool() == null) {
+            event.setSchool(resolveSchool(request, classEntity));
+        }
+        if (event.getCreatedBy() == null) {
+            event.setCreatedBy(resolveCreatedBy(request, classEntity, subject));
         }
 
         event.setRecurring(toJsonNode(request.getRecurring()));
@@ -137,18 +142,49 @@ public class CalendarEventService {
             .build();
     }
 
-    private School resolveSchool() {
-        return schoolRepository.findByCode("ZVHS")
-            .orElseGet(() -> schoolRepository.findAll().stream()
-                .findFirst()
-                .orElseThrow(() -> new NotFoundException("No school found")));
+    private School resolveSchool(CalendarEventRequest request, ClassEntity classEntity) {
+        if (request.getSchoolId() != null && !request.getSchoolId().isBlank()) {
+            return schoolRepository.findById(UUID.fromString(request.getSchoolId()))
+                .orElseThrow(() -> new NotFoundException("School not found: " + request.getSchoolId()));
+        }
+        if (classEntity != null && classEntity.getSchool() != null) {
+            return classEntity.getSchool();
+        }
+        return schoolRepository.findAll().stream()
+            .findFirst()
+            .orElseThrow(() -> new NotFoundException("No school found"));
     }
 
-    private User resolveUser() {
-        return userRepository.findByEmail("teacher@zivai.local")
-            .orElseGet(() -> userRepository.findAll().stream()
-                .findFirst()
-                .orElseThrow(() -> new NotFoundException("No user found")));
+    private User resolveCreatedBy(CalendarEventRequest request, ClassEntity classEntity, Subject subject) {
+        if (request.getCreatedBy() != null && !request.getCreatedBy().isBlank()) {
+            return userRepository.findByIdAndDeletedAtIsNull(UUID.fromString(request.getCreatedBy()))
+                .orElseThrow(() -> new NotFoundException("User not found: " + request.getCreatedBy()));
+        }
+
+        if (classEntity != null && subject != null) {
+            List<ClassSubject> links = classSubjectRepository.findByClassEntity_IdAndSubject_IdAndDeletedAtIsNull(
+                classEntity.getId(),
+                subject.getId()
+            );
+            for (ClassSubject link : links) {
+                if (link.getTeacher() != null) {
+                    return link.getTeacher();
+                }
+            }
+        }
+
+        if (classEntity != null && classEntity.getHomeroomTeacher() != null) {
+            return classEntity.getHomeroomTeacher();
+        }
+
+        List<User> teachers = userRepository.findByRoles_CodeAndDeletedAtIsNull("teacher");
+        if (!teachers.isEmpty()) {
+            return teachers.get(0);
+        }
+
+        return userRepository.findAllByDeletedAtIsNull().stream()
+            .findFirst()
+            .orElseThrow(() -> new NotFoundException("No user found"));
     }
 
     private Instant parseInstant(String value) {

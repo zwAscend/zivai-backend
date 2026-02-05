@@ -52,6 +52,14 @@ The app seeds a small set of users and lookup values on startup.
 - Authentication verifies BCrypt-hashed passwords stored in `lms.users.password_hash`.
 - Development plan endpoints currently return empty collections as stubs.
 
+## Recent LMS/admin updates
+- **Admin summary + edge nodes**: `/api/admin/summary`, `/api/admin/edge-nodes` (GET/POST/PUT/DELETE) are available.
+- **Subjects**:
+  - Optional `grades` can be provided and are stored in `lms.subjects.subject_attributes.grades`.
+  - `examBoardCode` is validated against `lookups.exam_board` (`zimsec`, `cambridge`).
+  - UI should send `ZIMSEC` or `CAMBRIDGE` (normalized to lowercase in the service).
+- **Edge node metadata**: stored in `edge.edge_nodes.metadata` (JSONB), with fields like `location`, `ipAddress`, `hardwareModel`, `serialNumber`, `comments`.
+
 
 ## Environment variables
 You can configure database access using environment variables (recommended for local/dev and CI):
