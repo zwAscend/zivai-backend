@@ -2,11 +2,15 @@ package zw.co.zivai.core_backend.models.lms;
 
 import java.time.Instant;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Getter;
 import lombok.Setter;
 import zw.co.zivai.core_backend.models.base.BaseEntity;
@@ -28,7 +32,8 @@ public class AttemptAnswer extends BaseEntity {
     private String studentAnswerText;
 
     @Column(name = "student_answer_blob")
-    private String studentAnswerBlob;
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode studentAnswerBlob;
 
     @Column(name = "submission_type")
     private String submissionType;
@@ -37,7 +42,8 @@ public class AttemptAnswer extends BaseEntity {
     private String textContent;
 
     @Column(name = "external_assessment_data")
-    private String externalAssessmentData;
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode externalAssessmentData;
 
     @ManyToOne
     @JoinColumn(name = "handwriting_resource_id")
@@ -56,7 +62,8 @@ public class AttemptAnswer extends BaseEntity {
     private String ocrLanguage;
 
     @Column(name = "ocr_metadata")
-    private String ocrMetadata;
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode ocrMetadata;
 
     @Column(name = "ai_score")
     private Double aiScore;

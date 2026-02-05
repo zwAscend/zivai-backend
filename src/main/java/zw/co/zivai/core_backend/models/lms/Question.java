@@ -1,10 +1,14 @@
 package zw.co.zivai.core_backend.models.lms;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Getter;
 import lombok.Setter;
 import zw.co.zivai.core_backend.models.base.BaseEntity;
@@ -46,7 +50,8 @@ public class Question extends BaseEntity {
     private Short sourceYear;
 
     @Column(name = "rubric_json")
-    private String rubricJson;
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode rubricJson;
 
     @Column(name = "is_active", nullable = false)
     private boolean active = true;

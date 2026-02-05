@@ -143,7 +143,7 @@ public class SubmissionService {
         answer.setStudentAnswerText(textContent);
         answer.setTextContent(textContent);
         answer.setSubmissionType(submissionType);
-        answer.setExternalAssessmentData(externalAssessmentData);
+        answer.setExternalAssessmentData(parseJsonNode(externalAssessmentData));
         answer.setMaxScore(attempt.getMaxScore() != null ? attempt.getMaxScore() : assessment.getMaxScore());
 
         if (metrics != null) {
@@ -501,24 +501,24 @@ public class SubmissionService {
         ).orElse(null);
     }
 
-    private Object parseExternalJson(String raw) {
-        if (raw == null || raw.isBlank()) {
+    private Object parseExternalJson(JsonNode node) {
+        if (node == null || node.isNull()) {
             return null;
         }
         try {
-            return objectMapper.readValue(raw, Object.class);
+            return objectMapper.convertValue(node, Object.class);
         } catch (Exception ex) {
-            return raw;
+            return node.toString();
         }
     }
 
     private ExternalAssessmentMetrics parseExternalAssessmentData(String externalAssessmentData) {
-        if (externalAssessmentData == null || externalAssessmentData.isBlank()) {
+        JsonNode root = parseJsonNode(externalAssessmentData);
+        if (root == null) {
             return null;
         }
 
         try {
-            JsonNode root = objectMapper.readTree(externalAssessmentData);
             JsonNode assessmentNode = root.path("assessment");
 
             Double marksAchieved = toDouble(assessmentNode.path("marks_achieved"));
@@ -549,6 +549,17 @@ public class SubmissionService {
             }
         }
         return null;
+    }
+
+    private JsonNode parseJsonNode(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(value);
+        } catch (Exception ex) {
+            return objectMapper.getNodeFactory().textNode(value);
+        }
     }
 
     private static class ExternalAssessmentMetrics {

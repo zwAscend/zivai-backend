@@ -6,6 +6,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.models.lms.ClassEntity;
@@ -34,10 +35,15 @@ public class DataSeeder {
     private final ClassRepository classRepository;
     private final EnrolmentRepository enrolmentRepository;
     private final CalendarEventRepository calendarEventRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    private static final String DEFAULT_SEEDED_PASSWORD = "TempPass123!";
 
     @Bean
     CommandLineRunner seedUsers() {
         return args -> {
+            ensureAuthSchema();
+            seedExamBoards();
             seedEnrolmentStatuses();
             seedAssessmentEnrollmentStatuses();
             seedGradingStatuses();
@@ -108,7 +114,12 @@ public class DataSeeder {
     }
 
     private void seedUser(String email, String phoneNumber, String username, String firstName, String lastName, List<Role> roles) {
-        if (userRepository.findByEmail(email).isPresent()) {
+        User existing = userRepository.findByEmail(email).orElse(null);
+        if (existing != null) {
+            if (existing.getPasswordHash() == null || existing.getPasswordHash().isBlank()) {
+                existing.setPasswordHash(passwordEncoder.encode(DEFAULT_SEEDED_PASSWORD));
+                userRepository.save(existing);
+            }
             return;
         }
         User user = new User();
@@ -118,8 +129,14 @@ public class DataSeeder {
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setActive(true);
+        user.setPasswordHash(passwordEncoder.encode(DEFAULT_SEEDED_PASSWORD));
         user.getRoles().addAll(roles);
         userRepository.save(user);
+    }
+
+    private void ensureAuthSchema() {
+        jdbcTemplate.update(
+            "ALTER TABLE IF EXISTS lms.users ADD COLUMN IF NOT EXISTS password_hash varchar(255)");
     }
 
     private void seedSubject(String code, String name, String description) {
@@ -201,6 +218,13 @@ public class DataSeeder {
             "INSERT INTO lookups.enrolment_status (code, name) VALUES ('dropped', 'Dropped') ON CONFLICT (code) DO NOTHING");
         jdbcTemplate.update(
             "INSERT INTO lookups.enrolment_status (code, name) VALUES ('completed', 'Completed') ON CONFLICT (code) DO NOTHING");
+    }
+
+    private void seedExamBoards() {
+        jdbcTemplate.update(
+            "INSERT INTO lookups.exam_board (code, name) VALUES ('zimsec', 'ZIMSEC') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.exam_board (code, name) VALUES ('cambridge', 'CAMBRIDGE') ON CONFLICT (code) DO NOTHING");
     }
 
     private void seedAssessmentEnrollmentStatuses() {

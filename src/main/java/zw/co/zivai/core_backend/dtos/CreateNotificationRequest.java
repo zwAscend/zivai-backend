@@ -12,7 +12,7 @@ public class CreateNotificationRequest {
     private String notifType;
     private String title;
     private String message;
-    private String data;
+    private Object data;
     private boolean read = false;
     private Instant readAt;
     private String priority = "medium";

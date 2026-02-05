@@ -27,11 +27,11 @@ public class SchoolService {
     }
 
     public List<School> list() {
-        return schoolRepository.findAll();
+        return schoolRepository.findAllByDeletedAtIsNull();
     }
 
     public School get(UUID id) {
-        return schoolRepository.findById(id)
+        return schoolRepository.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("School not found: " + id));
     }
 }

@@ -2,6 +2,7 @@ package zw.co.zivai.core_backend.repositories;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -9,5 +10,8 @@ import zw.co.zivai.core_backend.models.lms.ClassEntity;
 
 public interface ClassRepository extends JpaRepository<ClassEntity, UUID> {
     Optional<ClassEntity> findByCode(String code);
+    Optional<ClassEntity> findByCodeAndDeletedAtIsNull(String code);
+    List<ClassEntity> findAllByDeletedAtIsNull();
+    Optional<ClassEntity> findByIdAndDeletedAtIsNull(UUID id);
+    long countByDeletedAtIsNull();
 }
-

@@ -1,10 +1,12 @@
 package zw.co.zivai.core_backend.services;
 
-import java.util.Map;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.AuthUserDto;
@@ -18,24 +20,28 @@ import zw.co.zivai.core_backend.repositories.UserRepository;
 @RequiredArgsConstructor
 public class AuthService {
     private final UserRepository userRepository;
-
-    // Temporary embedded credentials (to be replaced by real auth)
-    private static final Map<String, String> PASSWORDS = Map.of(
-        "teacher@zivai.local", "TempPass123!",
-        "student@zivai.local", "TempPass123!",
-        "admin@zivai.local", "TempPass123!"
-    );
+    private final PasswordEncoder passwordEncoder;
+    private final SecureRandom secureRandom = new SecureRandom();
 
     public LoginResponse login(LoginRequest request) {
-        if (request.getEmail() == null || request.getPassword() == null) {
+        if (request.getEmail() == null || request.getEmail().isBlank()
+            || request.getPassword() == null || request.getPassword().isBlank()) {
             throw new BadRequestException("Email and password are required");
         }
 
-        User user = userRepository.findByEmail(request.getEmail())
+        User user = userRepository.findByEmailAndDeletedAtIsNull(request.getEmail().trim().toLowerCase())
             .orElseThrow(() -> new BadRequestException("Invalid credentials"));
 
-        String expected = PASSWORDS.get(request.getEmail());
-        if (expected == null || !expected.equals(request.getPassword())) {
+        if (!user.isActive()) {
+            throw new BadRequestException("Account is inactive");
+        }
+
+        String passwordHash = user.getPasswordHash();
+        if (passwordHash == null || passwordHash.isBlank()) {
+            throw new BadRequestException("Account has no password set");
+        }
+
+        if (!passwordEncoder.matches(request.getPassword(), passwordHash)) {
             throw new BadRequestException("Invalid credentials");
         }
 
@@ -62,8 +68,14 @@ public class AuthService {
             .build();
 
         return LoginResponse.builder()
-            .token("dev-token")
+            .token(generateToken())
             .user(userDto)
             .build();
+    }
+
+    private String generateToken() {
+        byte[] bytes = new byte[32];
+        secureRandom.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

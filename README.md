@@ -49,7 +49,7 @@ The app seeds a small set of users and lookup values on startup.
 > These are temporary credentials for development only.
 
 ## Notes
-- Authentication is currently mocked in `AuthService` (embedded passwords).
+- Authentication verifies BCrypt-hashed passwords stored in `lms.users.password_hash`.
 - Development plan endpoints currently return empty collections as stubs.
 
 

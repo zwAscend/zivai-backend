@@ -1,5 +1,7 @@
 package zw.co.zivai.core_backend.dtos;
 
+import java.util.List;
+
 import lombok.Builder;
 import lombok.Value;
 
@@ -9,6 +11,9 @@ public class SubjectDto {
     String id;
     String code;
     String name;
+    String examBoardCode;
     String description;
-    String teacher;
+    boolean active;
+    List<String> grades;
+    List<String> teachers;
 }
