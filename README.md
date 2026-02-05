@@ -50,7 +50,7 @@ The app seeds a small set of users and lookup values on startup.
 
 ## Notes
 - Authentication verifies BCrypt-hashed passwords stored in `lms.users.password_hash`.
-- Development plan endpoints currently return empty collections as stubs.
+- Development endpoints are backed by LMS data (`skills`, `student_attributes`, `plans`, `plan_steps`, `plan_skills`, `plan_subskills`, `student_plans`).
 
 ## Recent LMS/admin updates
 - **Admin summary + edge nodes**: `/api/admin/summary`, `/api/admin/edge-nodes` (GET/POST/PUT/DELETE) are available.
@@ -59,6 +59,13 @@ The app seeds a small set of users and lookup values on startup.
   - `examBoardCode` is validated against `lookups.exam_board` (`zimsec`, `cambridge`).
   - UI should send `ZIMSEC` or `CAMBRIDGE` (normalized to lowercase in the service).
 - **Edge node metadata**: stored in `edge.edge_nodes.metadata` (JSONB), with fields like `location`, `ipAddress`, `hardwareModel`, `serialNumber`, `comments`.
+- **Student profiles**:
+  - `overall`, `performance`, `engagement`, `strength` are derived from `student_profiles` or `student_attributes`.
+  - Subject lists resolve from `student_subject_enrolments` or class enrolments (`enrolments` + `class_subjects`).
+- **Calendar events**:
+  - `createdBy` and `schoolId` can be provided in the request.
+  - If missing, the service resolves the creator from class/subject teacher, homeroom teacher, then first available teacher/user.
+- **Resources**: `/api/resources/counts`, `/recent`, `/subject/{id}`, `/upload`, `/download/{id}`, `/file/{id}` are implemented.
 
 
 ## Environment variables
