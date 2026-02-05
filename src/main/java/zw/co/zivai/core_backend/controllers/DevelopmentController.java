@@ -1,44 +1,98 @@
 package zw.co.zivai.core_backend.controllers;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import zw.co.zivai.core_backend.dtos.AssignPlanRequest;
+import zw.co.zivai.core_backend.dtos.CreatePlanRequest;
+import zw.co.zivai.core_backend.dtos.DevelopmentAttributeDto;
+import zw.co.zivai.core_backend.dtos.DevelopmentPlanDto;
+import zw.co.zivai.core_backend.dtos.PlanDto;
+import zw.co.zivai.core_backend.dtos.StudentAttributeUpdateRequest;
+import zw.co.zivai.core_backend.dtos.UpdatePlanProgressRequest;
+import zw.co.zivai.core_backend.services.DevelopmentService;
 
 @RestController
 @RequestMapping("/api/development")
 @RequiredArgsConstructor
 public class DevelopmentController {
+    private final DevelopmentService developmentService;
 
     @GetMapping("/attributes/subject/{subjectId}")
-    public List<Map<String, Object>> getSubjectAttributes(@PathVariable UUID subjectId) {
-        return Collections.emptyList();
+    public List<DevelopmentAttributeDto> getSubjectAttributes(@PathVariable UUID subjectId) {
+        return developmentService.getSubjectAttributes(subjectId);
     }
 
     @GetMapping("/attributes/student/{studentId}/subject/{subjectId}")
     public Map<String, Object> getStudentAttributes(@PathVariable UUID studentId, @PathVariable UUID subjectId) {
-        return Collections.emptyMap();
+        return developmentService.getStudentAttributes(studentId, subjectId);
+    }
+
+    @PutMapping("/attributes/student/{studentId}")
+    public Map<String, Object> updateStudentAttributes(@PathVariable UUID studentId,
+                                                       @RequestBody List<StudentAttributeUpdateRequest> updates) {
+        developmentService.updateStudentAttributes(studentId, updates);
+        return Map.of("message", "Student attributes updated");
+    }
+
+    @PostMapping("/attributes/subject")
+    @ResponseStatus(HttpStatus.CREATED)
+    public DevelopmentAttributeDto createSubjectAttribute(@RequestBody DevelopmentAttributeDto request) {
+        return developmentService.createSubjectAttribute(request);
     }
 
     @GetMapping("/plans/subject/{subjectId}")
-    public List<Map<String, Object>> getSubjectPlans(@PathVariable UUID subjectId) {
-        return Collections.emptyList();
+    public List<PlanDto> getSubjectPlans(@PathVariable UUID subjectId) {
+        return developmentService.getSubjectPlans(subjectId);
+    }
+
+    @PostMapping("/plans/subject")
+    @ResponseStatus(HttpStatus.CREATED)
+    public PlanDto createSubjectPlan(@RequestBody CreatePlanRequest request) {
+        return developmentService.createSubjectPlan(request);
     }
 
     @GetMapping("/plans/student/{studentId}")
-    public List<Map<String, Object>> getStudentPlans(@PathVariable UUID studentId) {
-        return Collections.emptyList();
+    public List<DevelopmentPlanDto> getStudentPlans(@PathVariable UUID studentId,
+                                                    @RequestParam(value = "status", required = false) String status) {
+        return developmentService.getStudentPlans(studentId, status);
     }
 
     @GetMapping("/plans/student/{studentId}/subject/{subjectId}")
-    public Map<String, Object> getStudentPlan(@PathVariable UUID studentId, @PathVariable UUID subjectId) {
-        return Collections.emptyMap();
+    public DevelopmentPlanDto getStudentPlan(@PathVariable UUID studentId, @PathVariable UUID subjectId) {
+        return developmentService.getStudentPlan(studentId, subjectId);
+    }
+
+    @PostMapping("/plans/student/{studentId}/assign")
+    @ResponseStatus(HttpStatus.CREATED)
+    public DevelopmentPlanDto assignPlan(@PathVariable UUID studentId, @RequestBody AssignPlanRequest request) {
+        return developmentService.assignPlan(studentId, request);
+    }
+
+    @PutMapping("/plans/student/{studentId}/{planId}/progress")
+    public DevelopmentPlanDto updatePlanProgress(@PathVariable UUID studentId,
+                                                 @PathVariable UUID planId,
+                                                 @RequestBody UpdatePlanProgressRequest request) {
+        return developmentService.updatePlanProgress(studentId, planId, request);
+    }
+
+    @PatchMapping("/plans/{studentPlanId}/progress")
+    public DevelopmentPlanDto updatePlanProgressById(@PathVariable UUID studentPlanId,
+                                                     @RequestBody Map<String, Object> request) {
+        return developmentService.updatePlanProgressByStudentPlanId(studentPlanId, request);
     }
 }

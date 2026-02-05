@@ -15,4 +15,6 @@ public class CalendarEventRequest {
     private String location;
     private Object recurring;
     private Object reminders;
+    private String createdBy;
+    private String schoolId;
 }
