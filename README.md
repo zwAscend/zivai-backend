@@ -59,6 +59,7 @@ You can configure database access using environment variables (recommended for l
 - `ZIVAI_DB_URL` (default: `jdbc:postgresql://localhost:5432/zivai`)
 - `ZIVAI_DB_USERNAME` (default: `zivai`)
 - `ZIVAI_DB_PASSWORD` (default: empty)
+  - Fallbacks also supported for password: `SPRING_DATASOURCE_PASSWORD`, then `PGPASSWORD`
 
 ### Quick setup (local dev)
 1) **Create a local database** (PostgreSQL example):
