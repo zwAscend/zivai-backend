@@ -6,6 +6,8 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.CreateNotificationRequest;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
@@ -22,6 +24,7 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final SchoolRepository schoolRepository;
     private final UserRepository userRepository;
+    private final ObjectMapper objectMapper;
 
     public Notification create(CreateNotificationRequest request) {
         School school = schoolRepository.findById(request.getSchoolId())
@@ -35,7 +38,7 @@ public class NotificationService {
         notification.setNotifType(request.getNotifType());
         notification.setTitle(request.getTitle());
         notification.setMessage(request.getMessage());
-        notification.setData(request.getData());
+        notification.setData(request.getData() == null ? null : objectMapper.valueToTree(request.getData()));
         notification.setRead(request.isRead());
         notification.setReadAt(request.getReadAt());
         notification.setPriority(request.getPriority());

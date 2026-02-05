@@ -21,21 +21,21 @@ public class StudentService {
     private final SubjectRepository subjectRepository;
 
     public List<StudentDto> list() {
-        List<String> subjectIds = subjectRepository.findAll().stream()
+        List<String> subjectIds = subjectRepository.findAllByDeletedAtIsNull().stream()
             .map(Subject::getId)
             .map(UUID::toString)
             .toList();
 
-        return userRepository.findByRoles_Code("student").stream()
+        return userRepository.findByRoles_CodeAndDeletedAtIsNull("student").stream()
             .map(user -> toStudentDto(user, subjectIds))
             .collect(Collectors.toList());
     }
 
     public StudentDto get(UUID id) {
-        User user = userRepository.findById(id)
+        User user = userRepository.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("Student not found: " + id));
 
-        List<String> subjectIds = subjectRepository.findAll().stream()
+        List<String> subjectIds = subjectRepository.findAllByDeletedAtIsNull().stream()
             .map(Subject::getId)
             .map(UUID::toString)
             .toList();

@@ -5,12 +5,12 @@ import java.util.List;
 import lombok.Data;
 
 @Data
-public class CreateSubjectRequest {
+public class UpdateSubjectRequest {
     private String code;
     private String name;
     private String examBoardCode;
     private String description;
     private List<String> grades;
     private Object subjectAttributes;
-    private boolean active = true;
+    private Boolean active;
 }

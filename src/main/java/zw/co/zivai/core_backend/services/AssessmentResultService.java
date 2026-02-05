@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
@@ -224,15 +225,17 @@ public class AssessmentResultService {
             return null;
         }
         Optional<AttemptAnswer> answer = attemptAnswerRepository.findFirstByAssessmentAttempt_IdOrderByCreatedAtAsc(attempt.getId());
-        if (answer.isEmpty() || answer.get().getExternalAssessmentData() == null) {
+        if (answer.isEmpty()) {
             return null;
         }
-
-        String raw = answer.get().getExternalAssessmentData();
+        JsonNode raw = answer.get().getExternalAssessmentData();
+        if (raw == null || raw.isNull()) {
+            return null;
+        }
         try {
-            return objectMapper.readValue(raw, Object.class);
+            return objectMapper.convertValue(raw, Object.class);
         } catch (Exception ex) {
-            return raw;
+            return raw.toString();
         }
     }
 }

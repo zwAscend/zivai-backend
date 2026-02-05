@@ -5,7 +5,7 @@ import java.util.Set;
 import lombok.Data;
 
 @Data
-public class CreateUserRequest {
+public class UpdateUserRequest {
     private String externalId;
     private String email;
     private String phoneNumber;
@@ -13,6 +13,6 @@ public class CreateUserRequest {
     private String lastName;
     private String username;
     private String password;
-    private boolean active = true;
+    private Boolean active;
     private Set<String> roleCodes;
 }

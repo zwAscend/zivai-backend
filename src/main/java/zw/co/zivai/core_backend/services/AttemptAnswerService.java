@@ -5,6 +5,9 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.CreateAttemptAnswerRequest;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
@@ -24,6 +27,7 @@ public class AttemptAnswerService {
     private final AssessmentAttemptRepository assessmentAttemptRepository;
     private final AssessmentQuestionRepository assessmentQuestionRepository;
     private final ResourceRepository resourceRepository;
+    private final ObjectMapper objectMapper;
 
     public AttemptAnswer create(CreateAttemptAnswerRequest request) {
         AssessmentAttempt attempt = assessmentAttemptRepository.findById(request.getAssessmentAttemptId())
@@ -41,13 +45,13 @@ public class AttemptAnswerService {
         answer.setAssessmentAttempt(attempt);
         answer.setAssessmentQuestion(question);
         answer.setStudentAnswerText(request.getStudentAnswerText());
-        answer.setStudentAnswerBlob(request.getStudentAnswerBlob());
+        answer.setStudentAnswerBlob(parseJsonNode(request.getStudentAnswerBlob()));
         answer.setHandwritingResource(handwriting);
         answer.setOcrText(request.getOcrText());
         answer.setOcrConfidence(request.getOcrConfidence());
         answer.setOcrEngine(request.getOcrEngine());
         answer.setOcrLanguage(request.getOcrLanguage());
-        answer.setOcrMetadata(request.getOcrMetadata());
+        answer.setOcrMetadata(parseJsonNode(request.getOcrMetadata()));
         answer.setAiScore(request.getAiScore());
         answer.setHumanScore(request.getHumanScore());
         answer.setMaxScore(request.getMaxScore());
@@ -66,5 +70,16 @@ public class AttemptAnswerService {
     public AttemptAnswer get(UUID id) {
         return attemptAnswerRepository.findById(id)
             .orElseThrow(() -> new NotFoundException("Attempt answer not found: " + id));
+    }
+
+    private JsonNode parseJsonNode(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(value);
+        } catch (Exception ex) {
+            return objectMapper.getNodeFactory().textNode(value);
+        }
     }
 }
