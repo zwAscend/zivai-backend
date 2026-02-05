@@ -9,4 +9,6 @@ import zw.co.zivai.core_backend.models.lms.Message;
 
 public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<Message> findByChatIdOrderByTsAsc(UUID chatId);
+    List<Message> findByChatIdAndReadFalse(UUID chatId);
+    java.util.Optional<Message> findFirstByChatIdOrderByTsDesc(UUID chatId);
 }
