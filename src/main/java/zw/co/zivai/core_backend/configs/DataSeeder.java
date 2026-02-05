@@ -9,12 +9,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.models.lms.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.CalendarEvent;
 import zw.co.zivai.core_backend.models.lms.Enrolment;
 import zw.co.zivai.core_backend.models.lms.School;
 import zw.co.zivai.core_backend.models.lms.Subject;
 import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.models.lookups.Role;
 import zw.co.zivai.core_backend.repositories.ClassRepository;
+import zw.co.zivai.core_backend.repositories.CalendarEventRepository;
 import zw.co.zivai.core_backend.repositories.EnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.RoleRepository;
 import zw.co.zivai.core_backend.repositories.SchoolRepository;
@@ -31,6 +33,7 @@ public class DataSeeder {
     private final SubjectRepository subjectRepository;
     private final ClassRepository classRepository;
     private final EnrolmentRepository enrolmentRepository;
+    private final CalendarEventRepository calendarEventRepository;
 
     @Bean
     CommandLineRunner seedUsers() {
@@ -87,8 +90,12 @@ public class DataSeeder {
                     enrolment.setClassEntity(classEntity);
                     enrolment.setStudent(studentUser);
                     enrolment.setEnrolmentStatusCode("active");
-                    enrolmentRepository.save(enrolment);
+                        enrolmentRepository.save(enrolment);
                 }
+            }
+
+            if (teacherUser != null) {
+                seedCalendarEvents(school, teacherUser);
             }
         };
     }
@@ -125,6 +132,65 @@ public class DataSeeder {
         subject.setDescription(description);
         subject.setActive(true);
         subjectRepository.save(subject);
+    }
+
+    private void seedCalendarEvents(School school, User teacher) {
+        if (calendarEventRepository.count() > 0) {
+            return;
+        }
+
+        List<Subject> subjects = subjectRepository.findAll();
+        Subject math = subjects.stream().filter(s -> "MATH".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
+        Subject eng = subjects.stream().filter(s -> "ENG".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
+        Subject phy = subjects.stream().filter(s -> "PHY".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
+
+        CalendarEvent lesson = new CalendarEvent();
+        lesson.setSchool(school);
+        lesson.setTitle("Mathematics Lesson");
+        lesson.setDescription("Introduction to algebraic expressions");
+        lesson.setStartTime(java.time.Instant.now().plusSeconds(2 * 60 * 60));
+        lesson.setEndTime(java.time.Instant.now().plusSeconds(3 * 60 * 60));
+        lesson.setEventType("lesson");
+        lesson.setSubject(math);
+        lesson.setLocation("Room 101");
+        lesson.setCreatedBy(teacher);
+        calendarEventRepository.save(lesson);
+
+        CalendarEvent assignmentDue = new CalendarEvent();
+        assignmentDue.setSchool(school);
+        assignmentDue.setTitle("English Assignment Due");
+        assignmentDue.setDescription("Reading comprehension worksheet");
+        assignmentDue.setStartTime(java.time.Instant.now().plusSeconds(24 * 60 * 60));
+        assignmentDue.setAllDay(true);
+        assignmentDue.setEventType("assignment_due");
+        assignmentDue.setSubject(eng);
+        assignmentDue.setLocation("Classroom");
+        assignmentDue.setCreatedBy(teacher);
+        calendarEventRepository.save(assignmentDue);
+
+        CalendarEvent labSession = new CalendarEvent();
+        labSession.setSchool(school);
+        labSession.setTitle("Physics Lab Session");
+        labSession.setDescription("Intro to basic circuits");
+        labSession.setStartTime(java.time.Instant.now().plusSeconds(3 * 24 * 60 * 60));
+        labSession.setEndTime(java.time.Instant.now().plusSeconds(3 * 24 * 60 * 60 + 2 * 60 * 60));
+        labSession.setEventType("lab");
+        labSession.setSubject(phy);
+        labSession.setLocation("Lab 2");
+        labSession.setCreatedBy(teacher);
+        calendarEventRepository.save(labSession);
+
+        CalendarEvent quiz = new CalendarEvent();
+        quiz.setSchool(school);
+        quiz.setTitle("Mathematics Quiz");
+        quiz.setDescription("Algebra basics quiz");
+        quiz.setStartTime(java.time.Instant.now().plusSeconds(5 * 24 * 60 * 60));
+        quiz.setEndTime(java.time.Instant.now().plusSeconds(5 * 24 * 60 * 60 + 60 * 60));
+        quiz.setEventType("quiz");
+        quiz.setSubject(math);
+        quiz.setLocation("Room 101");
+        quiz.setCreatedBy(teacher);
+        calendarEventRepository.save(quiz);
     }
 
 
