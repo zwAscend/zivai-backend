@@ -27,6 +27,7 @@ import zw.co.zivai.core_backend.repositories.EnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.MessageRepository;
 import zw.co.zivai.core_backend.repositories.SchoolRepository;
 import zw.co.zivai.core_backend.repositories.UserRepository;
+import zw.co.zivai.core_backend.websockets.ChatSocketRegistry;
 
 @Service
 @RequiredArgsConstructor
@@ -38,6 +39,7 @@ public class ChatMessageService {
     private final SchoolRepository schoolRepository;
     private final EnrolmentRepository enrolmentRepository;
     private final ClassSubjectRepository classSubjectRepository;
+    private final ChatSocketRegistry chatSocketRegistry;
 
     public List<ChatMessageDto> getMessagesForStudent(UUID studentId) {
         User student = userRepository.findByIdAndDeletedAtIsNull(studentId)
@@ -49,22 +51,29 @@ public class ChatMessageService {
             .toList();
     }
 
-    public ChatMessageDto sendMessageFromStudent(UUID studentId, String content) {
+    public ChatMessageDto sendMessage(UUID studentId, UUID senderId, String content) {
         User student = userRepository.findByIdAndDeletedAtIsNull(studentId)
             .orElseThrow(() -> new NotFoundException("Student not found: " + studentId));
 
         Chat chat = getOrCreateChatForStudent(student);
         School school = chat.getSchool();
+        User sender = student;
+        if (senderId != null) {
+            sender = userRepository.findByIdAndDeletedAtIsNull(senderId)
+                .orElseThrow(() -> new NotFoundException("Sender not found: " + senderId));
+        }
 
         Message message = new Message();
         message.setChat(chat);
         message.setSchool(school);
-        message.setSender(student);
+        message.setSender(sender);
         message.setContent(content == null ? "" : content.trim());
         message.setTs(Instant.now());
         message.setRead(false);
 
-        return toDto(messageRepository.save(message));
+        ChatMessageDto dto = toDto(messageRepository.save(message));
+        chatSocketRegistry.broadcast(studentId.toString(), dto);
+        return dto;
     }
 
     public void markChatRead(UUID studentId) {
