@@ -64,8 +64,11 @@ public class AssessmentService {
         return assessmentRepository.save(assessment);
     }
 
-    public List<Assessment> list() {
-        return assessmentRepository.findAll();
+    public List<Assessment> list(UUID subjectId) {
+        if (subjectId == null) {
+            return assessmentRepository.findAll();
+        }
+        return assessmentRepository.findBySubject_Id(subjectId);
     }
 
     public Assessment get(UUID id) {

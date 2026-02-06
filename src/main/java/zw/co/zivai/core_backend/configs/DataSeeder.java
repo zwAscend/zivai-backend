@@ -13,6 +13,12 @@ import zw.co.zivai.core_backend.models.lms.ClassEntity;
 import zw.co.zivai.core_backend.models.lms.CalendarEvent;
 import zw.co.zivai.core_backend.models.lms.ClassSubject;
 import zw.co.zivai.core_backend.models.lms.Enrolment;
+import zw.co.zivai.core_backend.models.lms.Assessment;
+import zw.co.zivai.core_backend.models.lms.AssessmentAssignment;
+import zw.co.zivai.core_backend.models.lms.AssessmentResult;
+import zw.co.zivai.core_backend.models.lms.Chat;
+import zw.co.zivai.core_backend.models.lms.ChatMember;
+import zw.co.zivai.core_backend.models.lms.Message;
 import zw.co.zivai.core_backend.models.lms.Plan;
 import zw.co.zivai.core_backend.models.lms.PlanSkill;
 import zw.co.zivai.core_backend.models.lms.PlanStep;
@@ -29,6 +35,12 @@ import zw.co.zivai.core_backend.repositories.ClassRepository;
 import zw.co.zivai.core_backend.repositories.ClassSubjectRepository;
 import zw.co.zivai.core_backend.repositories.CalendarEventRepository;
 import zw.co.zivai.core_backend.repositories.EnrolmentRepository;
+import zw.co.zivai.core_backend.repositories.AssessmentAssignmentRepository;
+import zw.co.zivai.core_backend.repositories.AssessmentRepository;
+import zw.co.zivai.core_backend.repositories.AssessmentResultRepository;
+import zw.co.zivai.core_backend.repositories.ChatMemberRepository;
+import zw.co.zivai.core_backend.repositories.ChatRepository;
+import zw.co.zivai.core_backend.repositories.MessageRepository;
 import zw.co.zivai.core_backend.repositories.PlanRepository;
 import zw.co.zivai.core_backend.repositories.PlanSkillRepository;
 import zw.co.zivai.core_backend.repositories.PlanStepRepository;
@@ -54,6 +66,12 @@ public class DataSeeder {
     private final ClassSubjectRepository classSubjectRepository;
     private final EnrolmentRepository enrolmentRepository;
     private final CalendarEventRepository calendarEventRepository;
+    private final AssessmentRepository assessmentRepository;
+    private final AssessmentAssignmentRepository assessmentAssignmentRepository;
+    private final AssessmentResultRepository assessmentResultRepository;
+    private final ChatRepository chatRepository;
+    private final ChatMemberRepository chatMemberRepository;
+    private final MessageRepository messageRepository;
     private final SkillRepository skillRepository;
     private final StudentAttributeRepository studentAttributeRepository;
     private final PlanRepository planRepository;
@@ -106,8 +124,12 @@ public class DataSeeder {
             Subject mathSubject = subjectRepository.findByCode("MATH").orElse(null);
             Subject engSubject = subjectRepository.findByCode("ENG").orElse(null);
 
+            ClassEntity classEntity = null;
+            ClassSubject mathLink = null;
+            ClassSubject engLink = null;
+
             if (teacherUser != null) {
-                ClassEntity classEntity = classRepository.findByCode("FORM2-A")
+                classEntity = classRepository.findByCode("FORM2-A")
                     .orElseGet(() -> {
                         ClassEntity created = new ClassEntity();
                         created.setSchool(school);
@@ -130,17 +152,26 @@ public class DataSeeder {
                 }
 
                 if (mathSubject != null) {
-                    ClassSubject mathLink = seedClassSubject(school, classEntity, mathSubject, teacherUser, "2026", "Term 1");
+                    mathLink = seedClassSubject(school, classEntity, mathSubject, teacherUser, "2026", "Term 1");
                     seedStudentSubjectEnrolment(studentUser, mathLink);
                 }
                 if (engSubject != null) {
-                    ClassSubject engLink = seedClassSubject(school, classEntity, engSubject, teacherUser, "2026", "Term 1");
+                    engLink = seedClassSubject(school, classEntity, engSubject, teacherUser, "2026", "Term 1");
                     seedStudentSubjectEnrolment(studentUser, engLink);
                 }
             }
 
             if (teacherUser != null) {
                 seedCalendarEvents(school, teacherUser);
+            }
+
+            if (teacherUser != null && studentUser != null) {
+                seedChatData(school, teacherUser, studentUser);
+            }
+
+            if (teacherUser != null && studentUser != null) {
+                seedAssessmentData(school, teacherUser, studentUser, classEntity, mathSubject, mathLink);
+                seedAssessmentData(school, teacherUser, studentUser, classEntity, engSubject, engLink);
             }
 
             if (studentUser != null) {
@@ -159,8 +190,29 @@ public class DataSeeder {
     private void seedUser(String email, String phoneNumber, String username, String firstName, String lastName, List<Role> roles) {
         User existing = userRepository.findByEmail(email).orElse(null);
         if (existing != null) {
-            if (existing.getPasswordHash() == null || existing.getPasswordHash().isBlank()) {
+            boolean updated = false;
+            if (existing.getPasswordHash() == null || existing.getPasswordHash().isBlank()
+                || !passwordEncoder.matches(DEFAULT_SEEDED_PASSWORD, existing.getPasswordHash())) {
                 existing.setPasswordHash(passwordEncoder.encode(DEFAULT_SEEDED_PASSWORD));
+                updated = true;
+            }
+            if (!existing.isActive()) {
+                existing.setActive(true);
+                updated = true;
+            }
+            if (existing.getDeletedAt() != null) {
+                existing.setDeletedAt(null);
+                updated = true;
+            }
+            if (roles != null && !roles.isEmpty()) {
+                for (Role role : roles) {
+                    if (!existing.getRoles().contains(role)) {
+                        existing.getRoles().add(role);
+                        updated = true;
+                    }
+                }
+            }
+            if (updated) {
                 userRepository.save(existing);
             }
             return;
@@ -435,6 +487,173 @@ public class DataSeeder {
         studentPlan.setStatus("active");
         studentPlan.setCurrent(true);
         studentPlanRepository.save(studentPlan);
+    }
+
+    private void seedChatData(School school, User teacher, User student) {
+        if (school == null || teacher == null || student == null) {
+            return;
+        }
+
+        Chat existingChat = chatMemberRepository.findByUser_Id(student.getId()).stream()
+            .map(ChatMember::getChat)
+            .filter(chat -> chat != null && "direct".equalsIgnoreCase(chat.getChatType()))
+            .filter(chat -> chatMemberRepository.findByChat_Id(chat.getId()).stream()
+                .anyMatch(member -> member.getUser() != null && member.getUser().getId().equals(teacher.getId())))
+            .findFirst()
+            .orElse(null);
+
+        Chat chat = existingChat;
+        if (chat == null) {
+            chat = new Chat();
+            chat.setSchool(school);
+            chat.setChatType("direct");
+            chat.setTitle("Student Chat");
+            chat = chatRepository.save(chat);
+
+            ChatMember studentMember = new ChatMember();
+            studentMember.setChat(chat);
+            studentMember.setUser(student);
+            studentMember.setRole("member");
+            chatMemberRepository.save(studentMember);
+
+            ChatMember teacherMember = new ChatMember();
+            teacherMember.setChat(chat);
+            teacherMember.setUser(teacher);
+            teacherMember.setRole("admin");
+            chatMemberRepository.save(teacherMember);
+        }
+
+        if (messageRepository.findByChatIdOrderByTsAsc(chat.getId()).isEmpty()) {
+            seedMessage(school, chat, student, "Good day sir, I can't see my assignment on the portal.", 120);
+            seedMessage(school, chat, teacher, "Thanks for letting me know. I'll check and update it.", 90);
+            seedMessage(school, chat, student, "Appreciate it. Please let me know when it's fixed.", 60);
+        }
+    }
+
+    private void seedMessage(School school, Chat chat, User sender, String content, int minutesAgo) {
+        Message message = new Message();
+        message.setSchool(school);
+        message.setChat(chat);
+        message.setSender(sender);
+        message.setContent(content);
+        message.setTs(java.time.Instant.now().minusSeconds(minutesAgo * 60L));
+        message.setRead(minutesAgo > 90);
+        messageRepository.save(message);
+    }
+
+    private void seedAssessmentData(
+        School school,
+        User teacher,
+        User student,
+        ClassEntity classEntity,
+        Subject subject,
+        ClassSubject classSubject
+    ) {
+        if (school == null || teacher == null || student == null || subject == null) {
+            return;
+        }
+
+        Assessment quiz = seedAssessment(school, subject, teacher, "Weekly Quiz", "Quick check on recent topics", "quiz", 30.0, 10.0);
+        Assessment test = seedAssessment(school, subject, teacher, "Topic Test", "Assessment of module understanding", "test", 50.0, 20.0);
+
+        AssessmentAssignment quizAssignment = seedAssessmentAssignment(quiz, classEntity, teacher, "Weekly Quiz", "Complete the quiz", 7);
+        AssessmentAssignment testAssignment = seedAssessmentAssignment(test, classEntity, teacher, "Topic Test", "Answer all sections", 14);
+
+        seedAssessmentResult(quizAssignment, student, 18.0, 24.0, "B+", "Good understanding overall.");
+        seedAssessmentResult(testAssignment, student, 30.0, 40.0, "A-", "Strong performance, keep it up.");
+    }
+
+    private Assessment seedAssessment(
+        School school,
+        Subject subject,
+        User teacher,
+        String name,
+        String description,
+        String type,
+        double maxScore,
+        double weightPct
+    ) {
+        Assessment existing = assessmentRepository.findAll().stream()
+            .filter(assessment -> assessment.getSubject() != null
+                && assessment.getSubject().getId().equals(subject.getId())
+                && assessment.getName() != null
+                && assessment.getName().equalsIgnoreCase(name))
+            .findFirst()
+            .orElse(null);
+        if (existing != null) {
+            return existing;
+        }
+
+        Assessment assessment = new Assessment();
+        assessment.setSchool(school);
+        assessment.setSubject(subject);
+        assessment.setName(name);
+        assessment.setDescription(description);
+        assessment.setAssessmentType(type);
+        assessment.setVisibility("private");
+        assessment.setMaxScore(maxScore);
+        assessment.setWeightPct(weightPct);
+        assessment.setAiEnhanced(false);
+        assessment.setStatus("published");
+        assessment.setCreatedBy(teacher);
+        assessment.setLastModifiedBy(teacher);
+        return assessmentRepository.save(assessment);
+    }
+
+    private AssessmentAssignment seedAssessmentAssignment(
+        Assessment assessment,
+        ClassEntity classEntity,
+        User teacher,
+        String title,
+        String instructions,
+        int dueDays
+    ) {
+        if (assessment == null) {
+            return null;
+        }
+        List<AssessmentAssignment> existing = assessmentAssignmentRepository.findByAssessment_Id(assessment.getId());
+        if (!existing.isEmpty()) {
+            return existing.get(0);
+        }
+        AssessmentAssignment assignment = new AssessmentAssignment();
+        assignment.setAssessment(assessment);
+        assignment.setClassEntity(classEntity);
+        assignment.setAssignedBy(teacher);
+        assignment.setTitle(title);
+        assignment.setInstructions(instructions);
+        assignment.setStartTime(java.time.Instant.now().minusSeconds(3 * 24L * 3600L));
+        assignment.setDueTime(java.time.Instant.now().plusSeconds(dueDays * 24L * 3600L));
+        assignment.setPublished(true);
+        return assessmentAssignmentRepository.save(assignment);
+    }
+
+    private void seedAssessmentResult(
+        AssessmentAssignment assignment,
+        User student,
+        double expected,
+        double actual,
+        String grade,
+        String feedback
+    ) {
+        if (assignment == null || student == null) {
+            return;
+        }
+        if (assessmentResultRepository
+            .findFirstByAssessmentAssignment_IdAndStudent_Id(assignment.getId(), student.getId())
+            .isPresent()) {
+            return;
+        }
+        AssessmentResult result = new AssessmentResult();
+        result.setAssessmentAssignment(assignment);
+        result.setStudent(student);
+        result.setExpectedMark(expected);
+        result.setActualMark(actual);
+        result.setGrade(grade);
+        result.setFeedback(feedback);
+        result.setSubmittedAt(java.time.Instant.now().minusSeconds(1 * 24L * 3600L));
+        result.setGradedAt(java.time.Instant.now().minusSeconds(12 * 3600L));
+        result.setStatus("published");
+        assessmentResultRepository.save(result);
     }
 
     private String normalizePlanStepType(String value) {

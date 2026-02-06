@@ -66,6 +66,7 @@ The app seeds a small set of users and lookup values on startup.
   - `createdBy` and `schoolId` can be provided in the request.
   - If missing, the service resolves the creator from class/subject teacher, homeroom teacher, then first available teacher/user.
 - **Resources**: `/api/resources/counts`, `/recent`, `/subject/{id}`, `/upload`, `/download/{id}`, `/file/{id}` are implemented.
+- **Chat realtime**: WebSocket endpoint available at `/ws/chat?studentId=<uuid>` (broadcasts new messages for that student thread).
 
 
 ## Environment variables

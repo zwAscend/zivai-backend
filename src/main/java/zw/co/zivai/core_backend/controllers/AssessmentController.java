@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.CreateAssessmentRequest;
@@ -30,8 +31,8 @@ public class AssessmentController {
     }
 
     @GetMapping
-    public List<Assessment> list() {
-        return assessmentService.list();
+    public List<Assessment> list(@RequestParam(required = false) UUID subjectId) {
+        return assessmentService.list(subjectId);
     }
 
     @GetMapping("/{id}")

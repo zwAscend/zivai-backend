@@ -34,7 +34,9 @@ public class ChatMessageController {
     @ResponseStatus(HttpStatus.CREATED)
     public ChatMessageDto sendMessage(@PathVariable UUID studentId, @RequestBody Map<String, String> payload) {
         String content = payload != null ? payload.getOrDefault("content", "") : "";
-        return chatMessageService.sendMessageFromStudent(studentId, content);
+        String senderIdRaw = payload != null ? payload.get("senderId") : null;
+        UUID senderId = senderIdRaw != null && !senderIdRaw.isBlank() ? UUID.fromString(senderIdRaw) : null;
+        return chatMessageService.sendMessage(studentId, senderId, content);
     }
 
     @PutMapping("/read/{studentId}")
