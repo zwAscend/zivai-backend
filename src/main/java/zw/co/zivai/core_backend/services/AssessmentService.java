@@ -9,11 +9,15 @@ import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.CreateAssessmentRequest;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.models.lms.Assessment;
+import zw.co.zivai.core_backend.models.lms.AssessmentQuestion;
+import zw.co.zivai.core_backend.models.lms.Question;
 import zw.co.zivai.core_backend.models.lms.Resource;
 import zw.co.zivai.core_backend.models.lms.School;
 import zw.co.zivai.core_backend.models.lms.Subject;
 import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.repositories.AssessmentRepository;
+import zw.co.zivai.core_backend.repositories.AssessmentQuestionRepository;
+import zw.co.zivai.core_backend.repositories.QuestionRepository;
 import zw.co.zivai.core_backend.repositories.ResourceRepository;
 import zw.co.zivai.core_backend.repositories.SchoolRepository;
 import zw.co.zivai.core_backend.repositories.SubjectRepository;
@@ -27,6 +31,8 @@ public class AssessmentService {
     private final SubjectRepository subjectRepository;
     private final ResourceRepository resourceRepository;
     private final UserRepository userRepository;
+    private final QuestionRepository questionRepository;
+    private final AssessmentQuestionRepository assessmentQuestionRepository;
 
     public Assessment create(CreateAssessmentRequest request) {
         School school = schoolRepository.findById(request.getSchoolId())
@@ -61,7 +67,35 @@ public class AssessmentService {
         assessment.setCreatedBy(createdBy);
         assessment.setLastModifiedBy(modifiedBy);
 
-        return assessmentRepository.save(assessment);
+        Assessment saved = assessmentRepository.save(assessment);
+
+        if (request.getQuestions() != null && !request.getQuestions().isEmpty()) {
+            int order = 1;
+            for (var questionRequest : request.getQuestions()) {
+                Question question = new Question();
+                question.setSubject(subject);
+                question.setAuthor(createdBy);
+                question.setStem(questionRequest.getStem());
+                question.setQuestionTypeCode(questionRequest.getQuestionTypeCode());
+                question.setMaxMark(questionRequest.getMaxMark() != null ? questionRequest.getMaxMark() : 1.0);
+                if (questionRequest.getDifficulty() != null) {
+                    question.setDifficulty(questionRequest.getDifficulty().shortValue());
+                }
+                question.setRubricJson(questionRequest.getRubricJson());
+                Question savedQuestion = questionRepository.save(question);
+
+                AssessmentQuestion assessmentQuestion = new AssessmentQuestion();
+                assessmentQuestion.setAssessment(saved);
+                assessmentQuestion.setQuestion(savedQuestion);
+                int sequenceIndex = questionRequest.getSequenceIndex() != null ? questionRequest.getSequenceIndex() : order;
+                assessmentQuestion.setSequenceIndex(sequenceIndex);
+                assessmentQuestion.setPoints(questionRequest.getPoints() != null ? questionRequest.getPoints() : savedQuestion.getMaxMark());
+                assessmentQuestionRepository.save(assessmentQuestion);
+                order++;
+            }
+        }
+
+        return saved;
     }
 
     public List<Assessment> list(UUID subjectId) {
