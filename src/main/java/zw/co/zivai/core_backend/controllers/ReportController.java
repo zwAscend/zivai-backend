@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import zw.co.zivai.core_backend.dtos.ClassReportDto;
 import zw.co.zivai.core_backend.dtos.CurriculumForecastDto;
+import zw.co.zivai.core_backend.dtos.StudentReportDto;
 import zw.co.zivai.core_backend.dtos.TermForecastDto;
 import zw.co.zivai.core_backend.services.ReportService;
 
@@ -31,5 +33,17 @@ public class ReportController {
         @RequestParam(required = false) UUID forecastId
     ) {
         return reportService.getTermForecast(subjectId, term, academicYear, forecastId);
+    }
+
+    @GetMapping("/class-report")
+    public ClassReportDto classReport(@RequestParam(required = false) UUID subjectId,
+                                      @RequestParam(required = false) UUID classId) {
+        return reportService.getClassReport(subjectId, classId);
+    }
+
+    @GetMapping("/student-report")
+    public StudentReportDto studentReport(@RequestParam UUID studentId,
+                                          @RequestParam(required = false) UUID subjectId) {
+        return reportService.getStudentReport(studentId, subjectId);
     }
 }

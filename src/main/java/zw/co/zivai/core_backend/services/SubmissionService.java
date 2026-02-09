@@ -17,6 +17,7 @@ import zw.co.zivai.core_backend.dtos.GradingStatsDto;
 import zw.co.zivai.core_backend.dtos.ReviewSubmissionRequest;
 import zw.co.zivai.core_backend.dtos.SubmissionDetailDto;
 import zw.co.zivai.core_backend.dtos.SubmissionSummaryDto;
+import zw.co.zivai.core_backend.dtos.SubmitAssessmentAnswersRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.models.lms.AnswerAttachment;
@@ -57,6 +58,152 @@ public class SubmissionService {
     private final GradingOverrideRepository gradingOverrideRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+
+    public SubmissionDetailDto submitAnswers(SubmitAssessmentAnswersRequest request) {
+        if (request.getAssessmentId() == null || request.getStudentId() == null) {
+            throw new BadRequestException("assessmentId and studentId are required");
+        }
+        if (request.getAnswers() == null || request.getAnswers().isEmpty()) {
+            throw new BadRequestException("answers are required");
+        }
+        boolean hasNullQuestion = request.getAnswers().stream()
+            .anyMatch(answer -> answer.getAssessmentQuestionId() == null);
+        if (hasNullQuestion) {
+            throw new BadRequestException("assessmentQuestionId is required for each answer");
+        }
+        long distinctQuestions = request.getAnswers().stream()
+            .map(SubmitAssessmentAnswersRequest.AnswerItem::getAssessmentQuestionId)
+            .distinct()
+            .count();
+        if (distinctQuestions != request.getAnswers().size()) {
+            throw new BadRequestException("Duplicate assessmentQuestionId values are not allowed");
+        }
+
+        User student = userRepository.findById(request.getStudentId())
+            .orElseThrow(() -> new NotFoundException("Student not found: " + request.getStudentId()));
+
+        AssessmentAssignment assignment = request.getAssessmentAssignmentId() != null
+            ? assessmentAssignmentRepository.findById(request.getAssessmentAssignmentId())
+                .orElseThrow(() -> new NotFoundException("Assessment assignment not found: " + request.getAssessmentAssignmentId()))
+            : resolveSingleAssignment(request.getAssessmentId(), request.getStudentId());
+
+        if (!assignment.isPublished()) {
+            throw new BadRequestException("Assessment assignment is not published yet");
+        }
+
+        Assessment assessment = assignment.getAssessment();
+
+        AssessmentEnrollment enrollment = assessmentEnrollmentRepository
+            .findByAssessmentAssignment_IdAndStudent_Id(assignment.getId(), request.getStudentId())
+            .orElseGet(() -> createEnrollment(assignment, student));
+
+        Integer attemptsAllowed = assessment.getAttemptsAllowed();
+        if (attemptsAllowed != null && attemptsAllowed > 0) {
+            int currentAttempt = assessmentAttemptRepository
+                .findTopByAssessmentEnrollment_IdOrderByAttemptNumberDesc(enrollment.getId())
+                .map(AssessmentAttempt::getAttemptNumber)
+                .orElse(0);
+            if (currentAttempt >= attemptsAllowed) {
+                throw new BadRequestException("Maximum attempts reached for this assessment");
+            }
+        }
+
+        AssessmentAttempt attempt = new AssessmentAttempt();
+        attempt.setAssessmentEnrollment(enrollment);
+        attempt.setAttemptNumber(nextAttemptNumber(enrollment.getId()));
+        attempt.setStartedAt(Instant.now());
+        attempt.setSubmittedAt(Instant.now());
+        attempt.setSubmissionType(request.getSubmissionType() != null ? request.getSubmissionType() : "manual");
+
+        List<AssessmentQuestion> assessmentQuestions = assessmentQuestionRepository
+            .findByAssessment_IdOrderBySequenceIndexAsc(assessment.getId());
+        double computedMaxScore = assessmentQuestions.stream()
+            .mapToDouble(q -> q.getPoints() != null ? q.getPoints() : q.getQuestion().getMaxMark())
+            .sum();
+        Double maxScore = assessment.getMaxScore();
+        if (maxScore == null || maxScore == 0) {
+            maxScore = computedMaxScore > 0 ? computedMaxScore : null;
+        }
+        attempt.setMaxScore(maxScore);
+        attempt.setGradingStatusCode("pending");
+
+        AssessmentAttempt savedAttempt = assessmentAttemptRepository.save(attempt);
+
+        for (SubmitAssessmentAnswersRequest.AnswerItem answerItem : request.getAnswers()) {
+            AssessmentQuestion assessmentQuestion = assessmentQuestionRepository.findById(answerItem.getAssessmentQuestionId())
+                .orElseThrow(() -> new NotFoundException("Assessment question not found: " + answerItem.getAssessmentQuestionId()));
+            if (!assessmentQuestion.getAssessment().getId().equals(assessment.getId())) {
+                throw new BadRequestException("Question does not belong to this assessment");
+            }
+
+            AttemptAnswer answer = new AttemptAnswer();
+            answer.setAssessmentAttempt(savedAttempt);
+            answer.setAssessmentQuestion(assessmentQuestion);
+            answer.setStudentAnswerText(answerItem.getStudentAnswerText());
+            answer.setStudentAnswerBlob(answerItem.getStudentAnswerBlob());
+            Double questionMax = assessmentQuestion.getPoints() != null
+                ? assessmentQuestion.getPoints()
+                : assessmentQuestion.getQuestion().getMaxMark();
+            answer.setMaxScore(questionMax != null ? questionMax : 1.0);
+
+            Double autoScore = evaluateObjectiveScore(assessmentQuestion.getQuestion(), answer);
+            if (autoScore != null) {
+                answer.setAiScore(autoScore);
+                answer.setAiConfidence(1.0);
+                answer.setGradedAt(Instant.now());
+                answer.setRequiresReview(false);
+            } else {
+                answer.setRequiresReview(true);
+            }
+
+            attemptAnswerRepository.save(answer);
+        }
+
+        List<AttemptAnswer> attemptAnswers = attemptAnswerRepository.findByAssessmentAttempt_Id(savedAttempt.getId());
+        double totalScore = attemptAnswers.stream()
+            .mapToDouble(answer -> {
+                if (answer.getHumanScore() != null) {
+                    return answer.getHumanScore();
+                }
+                if (answer.getAiScore() != null) {
+                    return answer.getAiScore();
+                }
+                return 0.0;
+            })
+            .sum();
+
+        boolean allAnswered = !assessmentQuestions.isEmpty() && attemptAnswers.size() >= assessmentQuestions.size();
+        boolean allAutoGraded = allAnswered && attemptAnswers.stream().allMatch(answer ->
+            answer.getHumanScore() != null || answer.getAiScore() != null
+        );
+
+        savedAttempt.setTotalScore(totalScore);
+        savedAttempt.setSubmittedAt(Instant.now());
+        savedAttempt.setGradingStatusCode(allAutoGraded ? "auto_graded" : "pending");
+        assessmentAttemptRepository.save(savedAttempt);
+
+        enrollment.setStatusCode("completed");
+        assessmentEnrollmentRepository.save(enrollment);
+
+        AssessmentResult result = assessmentResultRepository
+            .findFirstByAssessmentAssignment_IdAndStudent_Id(assignment.getId(), request.getStudentId())
+            .orElseGet(AssessmentResult::new);
+        result.setAssessmentAssignment(assignment);
+        result.setStudent(student);
+        result.setExpectedMark(maxScore);
+        result.setSubmittedAt(savedAttempt.getSubmittedAt());
+        result.setFinalizedAttempt(savedAttempt);
+        if (allAutoGraded) {
+            result.setActualMark(totalScore);
+            result.setGradedAt(Instant.now());
+            result.setStatus("published");
+        } else {
+            result.setStatus("draft");
+        }
+        assessmentResultRepository.save(result);
+
+        return toDetailDto(savedAttempt);
+    }
 
     public SubmissionDetailDto submit(UUID assessmentId,
                                       UUID studentId,
@@ -549,6 +696,82 @@ public class SubmissionService {
             }
         }
         return null;
+    }
+
+    private Double evaluateObjectiveScore(Question question, AttemptAnswer answer) {
+        if (question == null || question.getQuestionTypeCode() == null) {
+            return null;
+        }
+        String type = question.getQuestionTypeCode().toLowerCase();
+        boolean objective = type.contains("mcq") || type.contains("multiple_choice") || type.contains("true_false") || type.contains("truefalse") || type.contains("boolean");
+        if (!objective) {
+            return null;
+        }
+        String correctAnswer = extractCorrectAnswer(question.getRubricJson());
+        if (correctAnswer == null || correctAnswer.isBlank()) {
+            return null;
+        }
+        String studentAnswer = extractStudentAnswer(answer);
+        if (studentAnswer == null) {
+            return null;
+        }
+
+        String normalizedCorrect = normalizeAnswer(correctAnswer);
+        String normalizedStudent = normalizeAnswer(studentAnswer);
+        if (normalizedCorrect.equals(normalizedStudent)) {
+            return answer.getMaxScore();
+        }
+        return 0.0;
+    }
+
+    private String extractCorrectAnswer(JsonNode rubricJson) {
+        if (rubricJson == null || rubricJson.isNull()) {
+            return null;
+        }
+        JsonNode direct = rubricJson.path("correctAnswer");
+        if (!direct.isMissingNode() && !direct.isNull()) {
+            return direct.asText();
+        }
+        JsonNode fallback = rubricJson.path("correct_answer");
+        if (!fallback.isMissingNode() && !fallback.isNull()) {
+            return fallback.asText();
+        }
+        JsonNode answer = rubricJson.path("answer");
+        if (!answer.isMissingNode() && !answer.isNull()) {
+            return answer.asText();
+        }
+        return null;
+    }
+
+    private String extractStudentAnswer(AttemptAnswer answer) {
+        if (answer.getStudentAnswerText() != null && !answer.getStudentAnswerText().isBlank()) {
+            return answer.getStudentAnswerText();
+        }
+        JsonNode blob = answer.getStudentAnswerBlob();
+        if (blob == null || blob.isNull()) {
+            return null;
+        }
+        if (blob.isTextual()) {
+            return blob.asText();
+        }
+        if (blob.isBoolean()) {
+            return Boolean.toString(blob.asBoolean());
+        }
+        String[] keys = { "answer", "selected", "selectedAnswer", "selectedOption", "value" };
+        for (String key : keys) {
+            JsonNode node = blob.path(key);
+            if (!node.isMissingNode() && !node.isNull()) {
+                return node.asText();
+            }
+        }
+        if (blob.isArray() && blob.size() > 0) {
+            return blob.get(0).asText();
+        }
+        return null;
+    }
+
+    private String normalizeAnswer(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
     }
 
     private JsonNode parseJsonNode(String value) {

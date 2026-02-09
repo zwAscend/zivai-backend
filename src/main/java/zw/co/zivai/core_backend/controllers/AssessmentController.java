@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.AssessmentWithQuestionsDto;
 import zw.co.zivai.core_backend.dtos.CreateAssessmentRequest;
+import zw.co.zivai.core_backend.dtos.CreateAssessmentQuestionRequest;
 import zw.co.zivai.core_backend.dtos.UpdateAssessmentRequest;
 import zw.co.zivai.core_backend.models.lms.Assessment;
 import zw.co.zivai.core_backend.services.AssessmentService;
@@ -60,6 +61,28 @@ public class AssessmentController {
     @PutMapping("/{id}")
     public Assessment update(@PathVariable UUID id, @RequestBody UpdateAssessmentRequest request) {
         return assessmentService.update(id, request);
+    }
+
+    @PostMapping("/{id}/questions")
+    public AssessmentWithQuestionsDto addQuestions(@PathVariable UUID id,
+                                                   @RequestBody List<CreateAssessmentQuestionRequest> questions) {
+        return assessmentService.addQuestions(id, questions);
+    }
+
+    @PutMapping("/{id}/questions")
+    public AssessmentWithQuestionsDto replaceQuestions(@PathVariable UUID id,
+                                                       @RequestBody List<CreateAssessmentQuestionRequest> questions) {
+        return assessmentService.replaceQuestions(id, questions);
+    }
+
+    @PostMapping("/{id}/publish")
+    public Assessment publish(@PathVariable UUID id) {
+        return assessmentService.setStatus(id, "published");
+    }
+
+    @PostMapping("/{id}/unpublish")
+    public Assessment unpublish(@PathVariable UUID id) {
+        return assessmentService.setStatus(id, "draft");
     }
 
     @DeleteMapping("/{id}")

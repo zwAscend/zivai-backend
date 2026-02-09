@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.StudentDto;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.models.lms.ClassSubject;
+import zw.co.zivai.core_backend.models.lms.ClassEntity;
 import zw.co.zivai.core_backend.models.lms.Enrolment;
 import zw.co.zivai.core_backend.models.lms.StudentAttribute;
 import zw.co.zivai.core_backend.models.lms.StudentProfile;
@@ -43,6 +44,19 @@ public class StudentService {
         return userRepository.findByRoles_CodeAndDeletedAtIsNull("student").stream()
             .map(this::toStudentDto)
             .collect(Collectors.toList());
+    }
+
+    public List<StudentDto> list(UUID subjectId, UUID classId, UUID classSubjectId) {
+        if (classSubjectId != null) {
+            return listByClassSubject(classSubjectId);
+        }
+        if (classId != null) {
+            return listByClass(classId);
+        }
+        if (subjectId != null) {
+            return listBySubject(subjectId);
+        }
+        return list();
     }
 
     public StudentDto get(UUID id) {
@@ -80,6 +94,66 @@ public class StudentService {
             .engagement(engagement)
             .subjects(subjectIds)
             .build();
+    }
+
+    private List<StudentDto> listByClassSubject(UUID classSubjectId) {
+        List<StudentSubjectEnrolment> enrolments =
+            studentSubjectEnrolmentRepository.findByClassSubject_IdAndDeletedAtIsNull(classSubjectId);
+        if (enrolments.isEmpty()) {
+            return List.of();
+        }
+        return enrolments.stream()
+            .map(StudentSubjectEnrolment::getStudent)
+            .filter(student -> student != null && student.getDeletedAt() == null)
+            .distinct()
+            .map(this::toStudentDto)
+            .toList();
+    }
+
+    private List<StudentDto> listByClass(UUID classId) {
+        List<Enrolment> enrolments = enrolmentRepository.findByClassEntity_Id(classId);
+        if (enrolments.isEmpty()) {
+            return List.of();
+        }
+        return enrolments.stream()
+            .map(Enrolment::getStudent)
+            .filter(student -> student != null && student.getDeletedAt() == null)
+            .distinct()
+            .map(this::toStudentDto)
+            .toList();
+    }
+
+    private List<StudentDto> listBySubject(UUID subjectId) {
+        List<StudentSubjectEnrolment> enrolments =
+            studentSubjectEnrolmentRepository.findByClassSubject_Subject_IdAndDeletedAtIsNull(subjectId);
+        if (!enrolments.isEmpty()) {
+            return enrolments.stream()
+                .map(StudentSubjectEnrolment::getStudent)
+                .filter(student -> student != null && student.getDeletedAt() == null)
+                .distinct()
+                .map(this::toStudentDto)
+                .toList();
+        }
+
+        List<ClassSubject> classSubjects = classSubjectRepository.findBySubject_IdAndDeletedAtIsNull(subjectId);
+        if (classSubjects.isEmpty()) {
+            return List.of();
+        }
+        Set<UUID> classIds = classSubjects.stream()
+            .map(ClassSubject::getClassEntity)
+            .filter(classEntity -> classEntity != null)
+            .map(ClassEntity::getId)
+            .collect(Collectors.toSet());
+        if (classIds.isEmpty()) {
+            return List.of();
+        }
+        return classIds.stream()
+            .flatMap(id -> enrolmentRepository.findByClassEntity_Id(id).stream())
+            .map(Enrolment::getStudent)
+            .filter(student -> student != null && student.getDeletedAt() == null)
+            .distinct()
+            .map(this::toStudentDto)
+            .toList();
     }
 
     private List<String> resolveSubjectIds(UUID studentId) {

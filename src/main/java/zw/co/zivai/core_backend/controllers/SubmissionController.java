@@ -21,6 +21,7 @@ import zw.co.zivai.core_backend.dtos.GradingStatsDto;
 import zw.co.zivai.core_backend.dtos.ReviewSubmissionRequest;
 import zw.co.zivai.core_backend.dtos.SubmissionDetailDto;
 import zw.co.zivai.core_backend.dtos.SubmissionSummaryDto;
+import zw.co.zivai.core_backend.dtos.SubmitAssessmentAnswersRequest;
 import zw.co.zivai.core_backend.services.SubmissionService;
 
 @RestController
@@ -53,6 +54,12 @@ public class SubmissionController {
             fileType,
             file
         );
+    }
+
+    @PostMapping("/answers")
+    @ResponseStatus(HttpStatus.CREATED)
+    public SubmissionDetailDto submitAnswers(@RequestBody SubmitAssessmentAnswersRequest request) {
+        return submissionService.submitAnswers(request);
     }
 
     @GetMapping("/{submissionId}")

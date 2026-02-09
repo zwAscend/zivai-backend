@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import zw.co.zivai.core_backend.dtos.CreateCurriculumRequest;
 import zw.co.zivai.core_backend.dtos.CreateTopicRequest;
 import zw.co.zivai.core_backend.dtos.TopicDto;
 import zw.co.zivai.core_backend.dtos.UpdateTopicRequest;
@@ -35,6 +36,12 @@ public class AdminTopicController {
     @ResponseStatus(HttpStatus.CREATED)
     public TopicDto createTopic(@PathVariable UUID subjectId, @RequestBody CreateTopicRequest request) {
         return topicService.create(subjectId, request);
+    }
+
+    @PostMapping("/{subjectId}/curriculum")
+    @ResponseStatus(HttpStatus.CREATED)
+    public List<TopicDto> createCurriculum(@PathVariable UUID subjectId, @RequestBody CreateCurriculumRequest request) {
+        return topicService.createCurriculum(subjectId, request);
     }
 
     @PutMapping("/topics/{topicId}")

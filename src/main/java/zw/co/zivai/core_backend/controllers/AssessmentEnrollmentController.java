@@ -10,9 +10,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import zw.co.zivai.core_backend.dtos.AssessmentEnrollmentSummaryDto;
 import zw.co.zivai.core_backend.dtos.CreateAssessmentEnrollmentRequest;
 import zw.co.zivai.core_backend.models.lms.AssessmentEnrollment;
 import zw.co.zivai.core_backend.services.AssessmentEnrollmentService;
@@ -32,6 +34,13 @@ public class AssessmentEnrollmentController {
     @GetMapping
     public List<AssessmentEnrollment> list() {
         return assessmentEnrollmentService.list();
+    }
+
+    @GetMapping("/summary")
+    public List<AssessmentEnrollmentSummaryDto> listSummary(@RequestParam(required = false) UUID assignmentId,
+                                                            @RequestParam(required = false) UUID studentId,
+                                                            @RequestParam(required = false) UUID classId) {
+        return assessmentEnrollmentService.listSummary(assignmentId, studentId, classId);
     }
 
     @GetMapping("/{id}")

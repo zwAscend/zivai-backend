@@ -14,6 +14,7 @@ import zw.co.zivai.core_backend.dtos.TopicAnswerStat;
 public interface AttemptAnswerRepository extends JpaRepository<AttemptAnswer, UUID> {
     List<AttemptAnswer> findByAssessmentAttempt_Id(UUID assessmentAttemptId);
     Optional<AttemptAnswer> findFirstByAssessmentAttempt_IdOrderByCreatedAtAsc(UUID assessmentAttemptId);
+    long countByAssessmentAttempt_Id(UUID assessmentAttemptId);
 
     @Query("""
         select new zw.co.zivai.core_backend.dtos.TopicAnswerStat(
