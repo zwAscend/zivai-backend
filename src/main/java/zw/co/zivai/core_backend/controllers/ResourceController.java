@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -26,6 +27,7 @@ import zw.co.zivai.core_backend.dtos.CreateResourceRequest;
 import zw.co.zivai.core_backend.dtos.ResourceCountsDto;
 import zw.co.zivai.core_backend.dtos.ResourceDto;
 import zw.co.zivai.core_backend.dtos.ResourceRecentDto;
+import zw.co.zivai.core_backend.dtos.UpdateResourceRequest;
 import zw.co.zivai.core_backend.services.ResourceService;
 
 @RestController
@@ -48,8 +50,9 @@ public class ResourceController {
     }
 
     @GetMapping
-    public List<zw.co.zivai.core_backend.models.lms.Resource> list() {
-        return resourceService.list();
+    public List<ResourceDto> list(@RequestParam(value = "subjectId", required = false) UUID subjectId,
+                                  @RequestParam(value = "status", required = false) String status) {
+        return resourceService.list(subjectId, status);
     }
 
     @GetMapping("/counts")
@@ -68,8 +71,18 @@ public class ResourceController {
     }
 
     @GetMapping("/{id}")
-    public zw.co.zivai.core_backend.models.lms.Resource get(@PathVariable UUID id) {
-        return resourceService.get(id);
+    public ResourceDto get(@PathVariable UUID id) {
+        return resourceService.getContent(id);
+    }
+
+    @PutMapping("/{id}")
+    public ResourceDto update(@PathVariable UUID id, @RequestBody UpdateResourceRequest request) {
+        return resourceService.update(id, request);
+    }
+
+    @GetMapping("/content/{id}")
+    public ResourceDto content(@PathVariable UUID id) {
+        return resourceService.getContent(id);
     }
 
     @GetMapping("/download/{id}")
