@@ -26,8 +26,10 @@ public class ReportController {
     @GetMapping("/term-forecast")
     public TermForecastDto termForecast(
         @RequestParam(required = false) UUID subjectId,
-        @RequestParam(required = false) String term
+        @RequestParam(required = false) String term,
+        @RequestParam(required = false) String academicYear,
+        @RequestParam(required = false) UUID forecastId
     ) {
-        return reportService.getTermForecast(subjectId, term);
+        return reportService.getTermForecast(subjectId, term, academicYear, forecastId);
     }
 }

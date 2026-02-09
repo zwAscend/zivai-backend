@@ -171,22 +171,24 @@ public class DataSeeder {
             }
 
             if (mathSubject != null) {
-                Topic algebra = seedTopic(mathSubject, "ALG", "Algebra Fundamentals", 1);
-                Topic geometry = seedTopic(mathSubject, "GEO", "Geometry Basics", 2);
-                Topic statistics = seedTopic(mathSubject, "STAT", "Statistics & Probability", 3);
-                seedTopic(mathSubject, "NUM", "Number Patterns", 4);
-
-                if (mathLink != null) {
-                    seedTermForecast(mathLink, teacherUser, "Term 1", "2026", 70.0,
-                        List.of(algebra.getId(), geometry.getId(), statistics.getId()),
-                        "Focus on foundational algebra and geometry topics.");
+                List<Topic> mathCurriculum = seedMathCurriculum(mathSubject);
+                if (mathLink != null && !mathCurriculum.isEmpty()) {
+                    List<java.util.UUID> termTopics = mathCurriculum.stream()
+                        .filter(topic -> List.of("6.1", "6.2", "6.3").contains(topic.getCode()))
+                        .map(Topic::getId)
+                        .toList();
+                    if (!termTopics.isEmpty()) {
+                        seedTermForecast(mathLink, teacherUser, "Term 1", "2026", 70.0,
+                            termTopics,
+                            "Focus on number, sets, and consumer arithmetic foundations.");
+                    }
                 }
             }
 
             if (engSubject != null) {
-                Topic comprehension = seedTopic(engSubject, "COMP", "Reading Comprehension", 1);
-                Topic writing = seedTopic(engSubject, "WRIT", "Writing Skills", 2);
-                seedTopic(engSubject, "GRAM", "Grammar & Usage", 3);
+                Topic comprehension = seedTopic(engSubject, "COMP", "Reading Comprehension", "Reading and interpretation.", 1);
+                Topic writing = seedTopic(engSubject, "WRIT", "Writing Skills", "Grammar and structured writing.", 2);
+                seedTopic(engSubject, "GRAM", "Grammar & Usage", "Core grammar rules and usage.", 3);
 
                 if (engLink != null) {
                     seedTermForecast(engLink, teacherUser, "Term 1", "2026", 65.0,
@@ -421,7 +423,7 @@ public class DataSeeder {
             });
     }
 
-    private Topic seedTopic(Subject subject, String code, String name, int sequenceIndex) {
+    private Topic seedTopic(Subject subject, String code, String name, String description, int sequenceIndex) {
         return topicRepository.findBySubject_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(subject.getId()).stream()
             .filter(existing -> code.equalsIgnoreCase(existing.getCode()))
             .findFirst()
@@ -430,9 +432,196 @@ public class DataSeeder {
                 topic.setSubject(subject);
                 topic.setCode(code);
                 topic.setName(name);
+                topic.setDescription(description);
                 topic.setSequenceIndex(sequenceIndex);
                 return topicRepository.save(topic);
             });
+    }
+
+    private Skill seedSkill(Subject subject, Topic topic, String code, String name, String description, int sequenceIndex) {
+        return skillRepository.findBySubject_IdAndCode(subject.getId(), code)
+            .orElseGet(() -> {
+                Skill skill = new Skill();
+                skill.setSubject(subject);
+                skill.setTopic(topic);
+                skill.setCode(code);
+                skill.setName(name);
+                skill.setDescription(description);
+                skill.setSequenceIndex(sequenceIndex);
+                return skillRepository.save(skill);
+            });
+    }
+
+    private List<Topic> seedMathCurriculum(Subject subject) {
+        if (subject == null) {
+            return List.of();
+        }
+
+        List<Topic> topics = new java.util.ArrayList<>();
+
+        Topic number = seedTopic(subject, "6.1", "Number",
+            "Number concepts, operations, approximations, bases, ratio and scale.", 1);
+        topics.add(number);
+        seedSkill(subject, number, "6.1.1", "Number concepts and operations",
+            "Number types, fractions/decimals/percentages, number line, directed numbers, HCF/LCM, operations and precedence.", 1);
+        seedSkill(subject, number, "6.1.2", "Approximations and estimates",
+            "Significant figures, decimal places, rounding and estimation in context.", 2);
+        seedSkill(subject, number, "6.1.3", "Limits of accuracy",
+            "Upper and lower bounds for measurements and calculations.", 3);
+        seedSkill(subject, number, "6.1.4", "Standard form",
+            "Scientific notation A × 10^n.", 4);
+        seedSkill(subject, number, "6.1.5", "Number bases",
+            "Convert between bases 2–10 and interpret place value.", 5);
+        seedSkill(subject, number, "6.1.6", "Ratio, proportion and rates",
+            "Use ratio and proportion in practical contexts.", 6);
+        seedSkill(subject, number, "6.1.7", "Scale and map problems",
+            "Use scale factors and interpret maps/drawings.", 7);
+
+        Topic sets = seedTopic(subject, "6.2", "Sets",
+            "Set language, notation, operations, and Venn diagrams.", 2);
+        topics.add(sets);
+        seedSkill(subject, sets, "6.2.1", "Language and notation",
+            "Set builder notation, elements, subsets, universal and empty sets.", 1);
+        seedSkill(subject, sets, "6.2.2", "Operations on sets",
+            "Union, intersection, complement and set laws.", 2);
+        seedSkill(subject, sets, "6.2.3", "Venn diagrams",
+            "Solve problems using Venn diagrams (up to three sets).", 3);
+
+        Topic consumer = seedTopic(subject, "6.3", "Consumer Arithmetic",
+            "Real-life finance, rates, and consumer calculations.", 3);
+        topics.add(consumer);
+        seedSkill(subject, consumer, "6.3.1", "Interpreting real-life data",
+            "Bills, bank statements, mortgages, and media data interpretation.", 1);
+        seedSkill(subject, consumer, "6.3.2", "Rates and currency exchange",
+            "Rates, ratios, and foreign exchange calculations.", 2);
+        seedSkill(subject, consumer, "6.3.3", "Interest and discounts",
+            "Interest, discount, commission, depreciation and related calculations.", 3);
+        seedSkill(subject, consumer, "6.3.4", "Tax and hire purchase",
+            "Sales/income tax, hire purchase, and bank accounts.", 4);
+
+        Topic measures = seedTopic(subject, "6.4", "Measures and Mensuration",
+            "Units, time, perimeter, area, surface area, volume, density.", 4);
+        topics.add(measures);
+        seedSkill(subject, measures, "6.4.1", "Time and units",
+            "12/24-hour time, SI units and unit conversions.", 1);
+        seedSkill(subject, measures, "6.4.2", "Perimeter and area",
+            "Rectangles, triangles, parallelograms, trapezia.", 2);
+        seedSkill(subject, measures, "6.4.3", "Circles and arcs",
+            "Circumference, arc length, sector and segment area.", 3);
+        seedSkill(subject, measures, "6.4.4", "Surface area and volume",
+            "Cylinder, cuboid, prisms, pyramid, cone, sphere.", 4);
+        seedSkill(subject, measures, "6.4.5", "Density and capacity",
+            "Density, volume and capacity in practical contexts.", 5);
+
+        Topic graphs = seedTopic(subject, "6.5", "Graphs and Variation",
+            "Coordinate graphs, variation, functional graphs and kinematics.", 5);
+        topics.add(graphs);
+        seedSkill(subject, graphs, "6.5.1", "Coordinates and graphs",
+            "Plot and interpret Cartesian graphs from data.", 1);
+        seedSkill(subject, graphs, "6.5.2", "Kinematics graphs",
+            "Displacement-time and velocity-time graphs; speed and acceleration.", 2);
+        seedSkill(subject, graphs, "6.5.3", "Variation",
+            "Direct, inverse, joint and partial variation.", 3);
+        seedSkill(subject, graphs, "6.5.4", "Functional graphs",
+            "Linear, quadratic, power functions and f(x) notation.", 4);
+        seedSkill(subject, graphs, "6.5.5", "Gradients and rates of change",
+            "Gradients, turning points, and interpreting slopes.", 5);
+        seedSkill(subject, graphs, "6.5.6", "Area under a curve",
+            "Estimate area using squares or trapezia.", 6);
+
+        Topic algebra = seedTopic(subject, "6.6", "Algebraic Concepts and Techniques",
+            "Symbolic manipulation, factorisation, indices, equations and inequalities.", 6);
+        topics.add(algebra);
+        seedSkill(subject, algebra, "6.6.1", "Symbolic expressions and formulae",
+            "Translate to algebra and substitute values.", 1);
+        seedSkill(subject, algebra, "6.6.2", "Change of subject",
+            "Rearrange formulae, including from other subjects.", 2);
+        seedSkill(subject, algebra, "6.6.3", "Algebraic manipulation",
+            "Operations, expansion and simplification.", 3);
+        seedSkill(subject, algebra, "6.6.4", "Factorisation",
+            "Factorise linear and quadratic expressions.", 4);
+        seedSkill(subject, algebra, "6.6.5", "Indices and logarithms",
+            "Laws of indices and basic logarithm rules.", 5);
+        seedSkill(subject, algebra, "6.6.6", "Equations",
+            "Linear, simultaneous, and quadratic equations.", 6);
+        seedSkill(subject, algebra, "6.6.7", "Inequalities and linear programming",
+            "Solve inequalities and interpret feasible regions.", 7);
+
+        Topic geometry = seedTopic(subject, "6.7", "Geometric Concepts and Techniques",
+            "Angles, polygons, circles, similarity, construction and loci.", 7);
+        topics.add(geometry);
+        seedSkill(subject, geometry, "6.7.1", "Points, lines and angles",
+            "Angle properties, parallel lines, elevation and depression.", 1);
+        seedSkill(subject, geometry, "6.7.2", "Bearings",
+            "Three-figure bearings and compass directions.", 2);
+        seedSkill(subject, geometry, "6.7.3", "Polygons and area properties",
+            "Triangles, quadrilaterals, regular polygons.", 3);
+        seedSkill(subject, geometry, "6.7.4", "Circles and theorems",
+            "Chord, tangent, cyclic quadrilateral and circle theorems.", 4);
+        seedSkill(subject, geometry, "6.7.5", "Similarity and congruency",
+            "Similar figures and congruent triangles.", 5);
+        seedSkill(subject, geometry, "6.7.6", "Constructions",
+            "Angles, triangles, polygons and scale drawings.", 6);
+        seedSkill(subject, geometry, "6.7.7", "Loci",
+            "Loci in two dimensions using ruler and compass.", 7);
+        seedSkill(subject, geometry, "6.7.8", "Symmetry",
+            "Line and rotational symmetry of plane figures.", 8);
+
+        Topic trig = seedTopic(subject, "6.8", "Trigonometry",
+            "Pythagoras, trig ratios, and triangle area rules.", 8);
+        topics.add(trig);
+        seedSkill(subject, trig, "6.8.1", "Pythagoras and trig ratios",
+            "Apply Pythagoras, sine, cosine, tangent in right triangles.", 1);
+        seedSkill(subject, trig, "6.8.2", "Area of a triangle",
+            "Use area = 1/2 ab sin C.", 2);
+        seedSkill(subject, trig, "6.8.3", "Sine and cosine rules",
+            "Solve non-right triangles using sine/cosine rules.", 3);
+        seedSkill(subject, trig, "6.8.4", "3D trigonometry",
+            "Solve 3D problems involving angles between lines and planes.", 4);
+
+        Topic vectors = seedTopic(subject, "6.9", "Vectors and Matrices",
+            "Vector notation and matrix operations in 2D.", 9);
+        topics.add(vectors);
+        seedSkill(subject, vectors, "6.9.1", "Vectors in two dimensions",
+            "Translation, notation and representation.", 1);
+        seedSkill(subject, vectors, "6.9.2", "Vector operations",
+            "Addition, subtraction, scalar multiplication and magnitude.", 2);
+        seedSkill(subject, vectors, "6.9.3", "Position and parallel vectors",
+            "Identify position, equal and parallel vectors.", 3);
+        seedSkill(subject, vectors, "6.9.4", "Matrices basics",
+            "Order, addition, subtraction and scalar multiplication.", 4);
+        seedSkill(subject, vectors, "6.9.5", "Matrix operations",
+            "Multiplication, identity, determinant and inverse (2x2).", 5);
+
+        Topic transforms = seedTopic(subject, "6.10", "Transformations",
+            "Translation, reflection, rotation, enlargement, stretch and shear.", 10);
+        topics.add(transforms);
+        seedSkill(subject, transforms, "6.10.1", "Basic transformations",
+            "Translation, reflection, rotation and enlargement.", 1);
+        seedSkill(subject, transforms, "6.10.2", "Stretch and shear",
+            "One-way and two-way stretch, shear with invariant lines.", 2);
+        seedSkill(subject, transforms, "6.10.3", "Combined transformations",
+            "Compose transformations and describe fully.", 3);
+        seedSkill(subject, transforms, "6.10.4", "Matrices as operators",
+            "Use matrices to represent transformations.", 4);
+
+        Topic stats = seedTopic(subject, "6.11", "Statistics and Probability",
+            "Data handling and probability concepts.", 11);
+        topics.add(stats);
+        seedSkill(subject, stats, "6.11.1", "Collection and classification",
+            "Collect, classify and tabulate data.", 1);
+        seedSkill(subject, stats, "6.11.2", "Data representation",
+            "Charts, histograms, frequency tables and polygons.", 2);
+        seedSkill(subject, stats, "6.11.3", "Measures of central tendency",
+            "Mean, median, mode and use of assumed mean.", 3);
+        seedSkill(subject, stats, "6.11.4", "Cumulative frequency",
+            "Cumulative frequency curves/ogives and interpretation.", 4);
+        seedSkill(subject, stats, "6.11.5", "Probability terms",
+            "Random, certain, impossible, events and sample space.", 5);
+        seedSkill(subject, stats, "6.11.6", "Probability calculations",
+            "Single and combined events; tree diagrams/outcome tables.", 6);
+
+        return topics;
     }
 
     private void seedTermForecast(
