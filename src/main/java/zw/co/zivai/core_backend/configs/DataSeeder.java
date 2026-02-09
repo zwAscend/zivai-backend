@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.models.lms.ClassEntity;
@@ -29,6 +31,8 @@ import zw.co.zivai.core_backend.models.lms.StudentAttribute;
 import zw.co.zivai.core_backend.models.lms.StudentPlan;
 import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
 import zw.co.zivai.core_backend.models.lms.Subject;
+import zw.co.zivai.core_backend.models.lms.TermForecast;
+import zw.co.zivai.core_backend.models.lms.Topic;
 import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.models.lookups.Role;
 import zw.co.zivai.core_backend.repositories.ClassRepository;
@@ -52,6 +56,8 @@ import zw.co.zivai.core_backend.repositories.StudentAttributeRepository;
 import zw.co.zivai.core_backend.repositories.StudentPlanRepository;
 import zw.co.zivai.core_backend.repositories.StudentSubjectEnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.SubjectRepository;
+import zw.co.zivai.core_backend.repositories.TermForecastRepository;
+import zw.co.zivai.core_backend.repositories.TopicRepository;
 import zw.co.zivai.core_backend.repositories.UserRepository;
 
 @Configuration
@@ -73,6 +79,7 @@ public class DataSeeder {
     private final ChatMemberRepository chatMemberRepository;
     private final MessageRepository messageRepository;
     private final SkillRepository skillRepository;
+    private final TopicRepository topicRepository;
     private final StudentAttributeRepository studentAttributeRepository;
     private final PlanRepository planRepository;
     private final PlanStepRepository planStepRepository;
@@ -80,7 +87,9 @@ public class DataSeeder {
     private final PlanSubskillRepository planSubskillRepository;
     private final StudentPlanRepository studentPlanRepository;
     private final StudentSubjectEnrolmentRepository studentSubjectEnrolmentRepository;
+    private final TermForecastRepository termForecastRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ObjectMapper objectMapper;
 
     private static final String DEFAULT_SEEDED_PASSWORD = "TempPass123!";
 
@@ -158,6 +167,31 @@ public class DataSeeder {
                 if (engSubject != null) {
                     engLink = seedClassSubject(school, classEntity, engSubject, teacherUser, "2026", "Term 1");
                     seedStudentSubjectEnrolment(studentUser, engLink);
+                }
+            }
+
+            if (mathSubject != null) {
+                Topic algebra = seedTopic(mathSubject, "ALG", "Algebra Fundamentals", 1);
+                Topic geometry = seedTopic(mathSubject, "GEO", "Geometry Basics", 2);
+                Topic statistics = seedTopic(mathSubject, "STAT", "Statistics & Probability", 3);
+                seedTopic(mathSubject, "NUM", "Number Patterns", 4);
+
+                if (mathLink != null) {
+                    seedTermForecast(mathLink, teacherUser, "Term 1", "2026", 70.0,
+                        List.of(algebra.getId(), geometry.getId(), statistics.getId()),
+                        "Focus on foundational algebra and geometry topics.");
+                }
+            }
+
+            if (engSubject != null) {
+                Topic comprehension = seedTopic(engSubject, "COMP", "Reading Comprehension", 1);
+                Topic writing = seedTopic(engSubject, "WRIT", "Writing Skills", 2);
+                seedTopic(engSubject, "GRAM", "Grammar & Usage", 3);
+
+                if (engLink != null) {
+                    seedTermForecast(engLink, teacherUser, "Term 1", "2026", 65.0,
+                        List.of(comprehension.getId(), writing.getId()),
+                        "Prioritize comprehension and writing mastery.");
                 }
             }
 
@@ -385,6 +419,49 @@ public class DataSeeder {
                 skill.setDescription(description);
                 return skillRepository.save(skill);
             });
+    }
+
+    private Topic seedTopic(Subject subject, String code, String name, int sequenceIndex) {
+        return topicRepository.findBySubject_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(subject.getId()).stream()
+            .filter(existing -> code.equalsIgnoreCase(existing.getCode()))
+            .findFirst()
+            .orElseGet(() -> {
+                Topic topic = new Topic();
+                topic.setSubject(subject);
+                topic.setCode(code);
+                topic.setName(name);
+                topic.setSequenceIndex(sequenceIndex);
+                return topicRepository.save(topic);
+            });
+    }
+
+    private void seedTermForecast(
+        ClassSubject classSubject,
+        User teacher,
+        String term,
+        String academicYear,
+        double expectedCoverage,
+        List<java.util.UUID> topicIds,
+        String notes
+    ) {
+        if (classSubject == null) {
+            return;
+        }
+        if (termForecastRepository
+            .findByClassSubject_IdAndTermAndAcademicYearAndDeletedAtIsNull(classSubject.getId(), term, academicYear)
+            .isPresent()) {
+            return;
+        }
+        TermForecast forecast = new TermForecast();
+        forecast.setClassSubject(classSubject);
+        forecast.setTerm(term);
+        forecast.setAcademicYear(academicYear);
+        forecast.setExpectedCoveragePct(expectedCoverage);
+        JsonNode topicIdsJson = objectMapper.valueToTree(topicIds);
+        forecast.setExpectedTopicIds(topicIdsJson);
+        forecast.setNotes(notes);
+        forecast.setCreatedBy(teacher);
+        termForecastRepository.save(forecast);
     }
 
     private ClassSubject seedClassSubject(

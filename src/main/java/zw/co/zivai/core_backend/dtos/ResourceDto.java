@@ -1,6 +1,7 @@
 package zw.co.zivai.core_backend.dtos;
 
 import java.time.Instant;
+import java.util.List;
 
 import lombok.Builder;
 import lombok.Value;
@@ -18,6 +19,11 @@ public class ResourceDto {
     String key;
     String path;
     int downloads;
+    String status;
+    List<String> tags;
+    String contentType;
+    String contentBody;
+    Instant publishAt;
     String subject;
     Instant createdAt;
     Instant updatedAt;

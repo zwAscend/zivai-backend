@@ -11,6 +11,7 @@ public interface ClassSubjectRepository extends JpaRepository<ClassSubject, UUID
     long countByDeletedAtIsNull();
     List<ClassSubject> findAllByDeletedAtIsNull();
     List<ClassSubject> findBySubject_IdAndDeletedAtIsNull(UUID subjectId);
+    List<ClassSubject> findBySubject_IdAndTeacher_IdAndDeletedAtIsNull(UUID subjectId, UUID teacherId);
     List<ClassSubject> findByClassEntity_IdAndDeletedAtIsNull(UUID classId);
     List<ClassSubject> findByClassEntity_IdAndSubject_IdAndDeletedAtIsNull(UUID classId, UUID subjectId);
 }

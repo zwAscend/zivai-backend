@@ -1,10 +1,14 @@
 package zw.co.zivai.core_backend.models.lms;
 
+import java.time.Instant;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Getter;
 import lombok.Setter;
 import zw.co.zivai.core_backend.models.base.BaseEntity;
@@ -49,6 +53,19 @@ public class Resource extends BaseEntity {
 
     @Column(name = "storage_path")
     private String storagePath;
+
+    @Column(name = "tags", columnDefinition = "text[]")
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    private String[] tags;
+
+    @Column(name = "content_type")
+    private String contentType;
+
+    @Column(name = "content_body")
+    private String contentBody;
+
+    @Column(name = "publish_at")
+    private Instant publishAt;
 
     @Column(name = "downloads", nullable = false)
     private Integer downloads = 0;
