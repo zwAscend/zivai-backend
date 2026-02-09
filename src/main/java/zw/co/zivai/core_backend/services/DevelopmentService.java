@@ -9,6 +9,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
@@ -16,9 +19,12 @@ import zw.co.zivai.core_backend.dtos.AssignPlanRequest;
 import zw.co.zivai.core_backend.dtos.CreatePlanRequest;
 import zw.co.zivai.core_backend.dtos.DevelopmentAttributeDto;
 import zw.co.zivai.core_backend.dtos.DevelopmentPlanDto;
+import zw.co.zivai.core_backend.dtos.MasterySignalsSummaryDto;
+import zw.co.zivai.core_backend.dtos.PageResponse;
 import zw.co.zivai.core_backend.dtos.PlanDto;
 import zw.co.zivai.core_backend.dtos.StudentAttributeUpdateRequest;
 import zw.co.zivai.core_backend.dtos.UpdatePlanProgressRequest;
+import zw.co.zivai.core_backend.dtos.UpdateStudentPlanRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.models.lms.Plan;
@@ -28,6 +34,7 @@ import zw.co.zivai.core_backend.models.lms.PlanSubskill;
 import zw.co.zivai.core_backend.models.lms.Skill;
 import zw.co.zivai.core_backend.models.lms.StudentAttribute;
 import zw.co.zivai.core_backend.models.lms.StudentPlan;
+import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
 import zw.co.zivai.core_backend.models.lms.Subject;
 import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.repositories.PlanRepository;
@@ -37,7 +44,9 @@ import zw.co.zivai.core_backend.repositories.PlanSubskillRepository;
 import zw.co.zivai.core_backend.repositories.SkillRepository;
 import zw.co.zivai.core_backend.repositories.StudentAttributeRepository;
 import zw.co.zivai.core_backend.repositories.StudentPlanRepository;
+import zw.co.zivai.core_backend.repositories.StudentSubjectEnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.SubjectRepository;
+import zw.co.zivai.core_backend.repositories.EnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.UserRepository;
 
 @Service
@@ -50,8 +59,11 @@ public class DevelopmentService {
     private final PlanSkillRepository planSkillRepository;
     private final PlanSubskillRepository planSubskillRepository;
     private final StudentPlanRepository studentPlanRepository;
+    private final StudentSubjectEnrolmentRepository studentSubjectEnrolmentRepository;
     private final SubjectRepository subjectRepository;
+    private final EnrolmentRepository enrolmentRepository;
     private final UserRepository userRepository;
+    private final StudentService studentService;
 
     public List<DevelopmentAttributeDto> getSubjectAttributes(UUID subjectId) {
         return skillRepository.findBySubject_Id(subjectId).stream()
@@ -215,7 +227,9 @@ public class DevelopmentService {
     }
 
     public List<DevelopmentPlanDto> getStudentPlans(UUID studentId, String status) {
-        List<StudentPlan> plans = studentPlanRepository.findByStudent_Id(studentId);
+        List<StudentPlan> plans = studentPlanRepository.findByStudent_Id(studentId).stream()
+            .filter(plan -> plan.getDeletedAt() == null)
+            .toList();
         if (status != null && !status.isBlank()) {
             String normalized = normalizeStatus(status);
             plans = plans.stream()
@@ -228,11 +242,87 @@ public class DevelopmentService {
             .toList();
     }
 
+    public PageResponse<DevelopmentPlanDto> listStudentPlans(UUID subjectId,
+                                                             UUID classId,
+                                                             UUID classSubjectId,
+                                                             String status,
+                                                             int page,
+                                                             int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = size <= 0 ? 20 : Math.min(size, 200);
+        PageRequest pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Page<StudentPlan> resultPage;
+        String normalizedStatus = status != null && !status.isBlank() ? normalizeStatus(status) : null;
+
+        if (classSubjectId != null) {
+            List<UUID> studentIds = studentSubjectEnrolmentRepository
+                .findByClassSubject_IdAndDeletedAtIsNull(classSubjectId).stream()
+                .map(StudentSubjectEnrolment::getStudent)
+                .filter(student -> student != null)
+                .map(User::getId)
+                .distinct()
+                .toList();
+            if (studentIds.isEmpty()) {
+                return emptyPage(safePage, safeSize);
+            }
+            resultPage = subjectId == null
+                ? (normalizedStatus == null
+                    ? studentPlanRepository.findByStudent_IdInAndDeletedAtIsNull(studentIds, pageable)
+                    : studentPlanRepository.findByStudent_IdInAndStatusIgnoreCaseAndDeletedAtIsNull(studentIds, normalizedStatus, pageable))
+                : (normalizedStatus == null
+                    ? studentPlanRepository.findByStudent_IdInAndSubject_IdAndDeletedAtIsNull(studentIds, subjectId, pageable)
+                    : studentPlanRepository.findByStudent_IdInAndSubject_IdAndStatusIgnoreCaseAndDeletedAtIsNull(studentIds, subjectId, normalizedStatus, pageable));
+        } else if (classId != null) {
+            List<UUID> studentIds = enrolmentRepository.findByClassEntity_Id(classId).stream()
+                .map(enrolment -> enrolment.getStudent())
+                .filter(student -> student != null)
+                .map(User::getId)
+                .distinct()
+                .toList();
+            if (studentIds.isEmpty()) {
+                return emptyPage(safePage, safeSize);
+            }
+            resultPage = subjectId == null
+                ? (normalizedStatus == null
+                    ? studentPlanRepository.findByStudent_IdInAndDeletedAtIsNull(studentIds, pageable)
+                    : studentPlanRepository.findByStudent_IdInAndStatusIgnoreCaseAndDeletedAtIsNull(studentIds, normalizedStatus, pageable))
+                : (normalizedStatus == null
+                    ? studentPlanRepository.findByStudent_IdInAndSubject_IdAndDeletedAtIsNull(studentIds, subjectId, pageable)
+                    : studentPlanRepository.findByStudent_IdInAndSubject_IdAndStatusIgnoreCaseAndDeletedAtIsNull(studentIds, subjectId, normalizedStatus, pageable));
+        } else if (subjectId != null) {
+            resultPage = normalizedStatus == null
+                ? studentPlanRepository.findBySubject_IdAndDeletedAtIsNull(subjectId, pageable)
+                : studentPlanRepository.findBySubject_IdAndStatusIgnoreCaseAndDeletedAtIsNull(subjectId, normalizedStatus, pageable);
+        } else {
+            resultPage = normalizedStatus == null
+                ? studentPlanRepository.findByDeletedAtIsNull(pageable)
+                : studentPlanRepository.findByStatusIgnoreCaseAndDeletedAtIsNull(normalizedStatus, pageable);
+        }
+
+        List<DevelopmentPlanDto> items = resultPage.getContent().stream()
+            .map(this::toDevelopmentPlanDto)
+            .toList();
+
+        return PageResponse.<DevelopmentPlanDto>builder()
+            .items(items)
+            .page(resultPage.getNumber())
+            .size(resultPage.getSize())
+            .totalItems(resultPage.getTotalElements())
+            .totalPages(resultPage.getTotalPages())
+            .build();
+    }
+
     public DevelopmentPlanDto getStudentPlan(UUID studentId, UUID subjectId) {
-        StudentPlan plan = studentPlanRepository
-            .findFirstByStudent_IdAndSubject_IdAndCurrentTrue(studentId, subjectId)
-            .orElseGet(() -> studentPlanRepository.findByStudent_IdAndSubject_IdOrderByCreatedAtDesc(studentId, subjectId)
-                .stream().findFirst()
+        List<StudentPlan> plans = studentPlanRepository.findByStudent_IdAndSubject_IdOrderByCreatedAtDesc(studentId, subjectId)
+            .stream()
+            .filter(plan -> plan.getDeletedAt() == null)
+            .toList();
+        StudentPlan plan = plans.stream()
+            .filter(StudentPlan::isCurrent)
+            .findFirst()
+            .orElseGet(() -> plans.stream()
+                .findFirst()
                 .orElseThrow(() -> new NotFoundException("No plan found for student and subject")));
         return toDevelopmentPlanDto(plan);
     }
@@ -254,7 +344,7 @@ public class DevelopmentService {
 
         studentPlanRepository.findByStudent_IdAndSubject_Id(studentId, subject.getId())
             .forEach(existing -> {
-                if (existing.isCurrent()) {
+                if (existing.isCurrent() && existing.getDeletedAt() == null) {
                     existing.setCurrent(false);
                     studentPlanRepository.save(existing);
                 }
@@ -269,6 +359,7 @@ public class DevelopmentService {
         studentPlan.setCurrentProgress(0.0);
         studentPlan.setStatus("active");
         studentPlan.setCurrent(true);
+        studentPlan.setDeletedAt(null);
         StudentPlan saved = studentPlanRepository.save(studentPlan);
         return toDevelopmentPlanDto(saved);
     }
@@ -276,6 +367,9 @@ public class DevelopmentService {
     public DevelopmentPlanDto updatePlanProgress(UUID studentId, UUID planId, UpdatePlanProgressRequest request) {
         StudentPlan studentPlan = studentPlanRepository.findByStudent_IdAndPlan_Id(studentId, planId)
             .orElseThrow(() -> new NotFoundException("Student plan not found"));
+        if (studentPlan.getDeletedAt() != null) {
+            throw new NotFoundException("Student plan not found");
+        }
         applyProgressUpdate(studentPlan, request);
         return toDevelopmentPlanDto(studentPlanRepository.save(studentPlan));
     }
@@ -283,6 +377,9 @@ public class DevelopmentService {
     public DevelopmentPlanDto updatePlanProgressByStudentPlanId(UUID studentPlanId, Map<String, Object> request) {
         StudentPlan studentPlan = studentPlanRepository.findById(studentPlanId)
             .orElseThrow(() -> new NotFoundException("Student plan not found: " + studentPlanId));
+        if (studentPlan.getDeletedAt() != null) {
+            throw new NotFoundException("Student plan not found: " + studentPlanId);
+        }
 
         UpdatePlanProgressRequest mapped = new UpdatePlanProgressRequest();
         if (request != null) {
@@ -306,6 +403,130 @@ public class DevelopmentService {
 
         applyProgressUpdate(studentPlan, mapped);
         return toDevelopmentPlanDto(studentPlanRepository.save(studentPlan));
+    }
+
+    public DevelopmentPlanDto getStudentPlanById(UUID studentPlanId) {
+        StudentPlan plan = studentPlanRepository.findById(studentPlanId)
+            .orElseThrow(() -> new NotFoundException("Student plan not found: " + studentPlanId));
+        if (plan.getDeletedAt() != null) {
+            throw new NotFoundException("Student plan not found: " + studentPlanId);
+        }
+        return toDevelopmentPlanDto(plan);
+    }
+
+    public DevelopmentPlanDto updateStudentPlan(UUID studentPlanId, UpdateStudentPlanRequest request) {
+        StudentPlan studentPlan = studentPlanRepository.findById(studentPlanId)
+            .orElseThrow(() -> new NotFoundException("Student plan not found: " + studentPlanId));
+        if (studentPlan.getDeletedAt() != null) {
+            throw new NotFoundException("Student plan not found: " + studentPlanId);
+        }
+        if (request == null) {
+            return toDevelopmentPlanDto(studentPlan);
+        }
+
+        Plan plan = studentPlan.getPlan();
+        if (request.getPlanId() != null && !request.getPlanId().isBlank()) {
+            plan = planRepository.findById(UUID.fromString(request.getPlanId()))
+                .orElseThrow(() -> new NotFoundException("Plan not found: " + request.getPlanId()));
+            studentPlan.setPlan(plan);
+        }
+
+        if (request.getSubjectId() != null && !request.getSubjectId().isBlank()) {
+            Subject subject = subjectRepository.findById(UUID.fromString(request.getSubjectId()))
+                .orElseThrow(() -> new NotFoundException("Subject not found: " + request.getSubjectId()));
+            if (plan != null && plan.getSubject() != null && !plan.getSubject().getId().equals(subject.getId())) {
+                throw new BadRequestException("Plan does not belong to selected subject");
+            }
+            studentPlan.setSubject(subject);
+        } else if (plan != null && plan.getSubject() != null) {
+            studentPlan.setSubject(plan.getSubject());
+        }
+
+        if (request.getCurrentProgress() != null) {
+            studentPlan.setCurrentProgress(clampProgress(request.getCurrentProgress()));
+        }
+        if (request.getStatus() != null) {
+            studentPlan.setStatus(normalizeStatus(request.getStatus()));
+        }
+        if (request.getStartDate() != null) {
+            studentPlan.setStartDate(request.getStartDate());
+        }
+        if (request.getCompletionDate() != null) {
+            studentPlan.setCompletionDate(request.getCompletionDate());
+        } else if ("completed".equalsIgnoreCase(normalizeStatus(studentPlan.getStatus())) && studentPlan.getCompletionDate() == null) {
+            studentPlan.setCompletionDate(Instant.now());
+        }
+
+        if (request.getCurrent() != null) {
+            boolean makeCurrent = request.getCurrent();
+            if (makeCurrent) {
+                studentPlanRepository.findByStudent_IdAndSubject_Id(studentPlan.getStudent().getId(), studentPlan.getSubject().getId())
+                    .forEach(existing -> {
+                        if (existing.isCurrent() && existing.getDeletedAt() == null && !existing.getId().equals(studentPlan.getId())) {
+                            existing.setCurrent(false);
+                            studentPlanRepository.save(existing);
+                        }
+                    });
+            }
+            studentPlan.setCurrent(makeCurrent);
+        }
+
+        return toDevelopmentPlanDto(studentPlanRepository.save(studentPlan));
+    }
+
+    public void deleteStudentPlan(UUID studentPlanId) {
+        StudentPlan studentPlan = studentPlanRepository.findById(studentPlanId)
+            .orElseThrow(() -> new NotFoundException("Student plan not found: " + studentPlanId));
+        if (studentPlan.getDeletedAt() != null) {
+            return;
+        }
+        studentPlan.setDeletedAt(Instant.now());
+        studentPlan.setCurrent(false);
+        studentPlanRepository.save(studentPlan);
+    }
+
+    public MasterySignalsSummaryDto getMasterySignalsSummary(UUID subjectId, UUID classId, UUID classSubjectId) {
+        List<zw.co.zivai.core_backend.dtos.StudentDto> students = studentService.list(subjectId, classId, classSubjectId);
+        if (students.isEmpty()) {
+            return MasterySignalsSummaryDto.builder()
+                .totalStudents(0)
+                .excellent(0)
+                .good(0)
+                .average(0)
+                .needsImprovement(0)
+                .averageOverall(0.0)
+                .build();
+        }
+
+        int excellent = 0;
+        int good = 0;
+        int average = 0;
+        int needsImprovement = 0;
+        double totalOverall = 0.0;
+
+        for (var student : students) {
+            double overall = student.getOverall();
+            totalOverall += overall;
+            if (overall >= 85.0) {
+                excellent++;
+            } else if (overall >= 70.0) {
+                good++;
+            } else if (overall >= 55.0) {
+                average++;
+            } else {
+                needsImprovement++;
+            }
+        }
+
+        double averageOverall = Math.round((totalOverall / students.size()) * 10.0) / 10.0;
+        return MasterySignalsSummaryDto.builder()
+            .totalStudents(students.size())
+            .excellent(excellent)
+            .good(good)
+            .average(average)
+            .needsImprovement(needsImprovement)
+            .averageOverall(averageOverall)
+            .build();
     }
 
     private void applyProgressUpdate(StudentPlan studentPlan, UpdatePlanProgressRequest request) {
@@ -485,5 +706,28 @@ public class DevelopmentService {
         } catch (NumberFormatException ex) {
             return null;
         }
+    }
+
+    private Double clampProgress(Double value) {
+        if (value == null) {
+            return null;
+        }
+        if (value < 0) {
+            return 0.0;
+        }
+        if (value > 100) {
+            return 100.0;
+        }
+        return value;
+    }
+
+    private PageResponse<DevelopmentPlanDto> emptyPage(int page, int size) {
+        return PageResponse.<DevelopmentPlanDto>builder()
+            .items(List.of())
+            .page(page)
+            .size(size)
+            .totalItems(0)
+            .totalPages(0)
+            .build();
     }
 }

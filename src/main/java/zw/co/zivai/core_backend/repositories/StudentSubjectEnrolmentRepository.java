@@ -9,4 +9,6 @@ import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
 
 public interface StudentSubjectEnrolmentRepository extends JpaRepository<StudentSubjectEnrolment, UUID> {
     List<StudentSubjectEnrolment> findByStudent_IdAndDeletedAtIsNull(UUID studentId);
+    List<StudentSubjectEnrolment> findByClassSubject_IdAndDeletedAtIsNull(UUID classSubjectId);
+    List<StudentSubjectEnrolment> findByClassSubject_Subject_IdAndDeletedAtIsNull(UUID subjectId);
 }

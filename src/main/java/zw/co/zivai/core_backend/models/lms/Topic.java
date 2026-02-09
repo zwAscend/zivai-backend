@@ -26,6 +26,9 @@ public class Topic extends BaseEntity {
 
     private String description;
 
+    @Column(name = "objectives")
+    private String objectives;
+
     @Column(name = "sequence_index")
     private Integer sequenceIndex;
 }

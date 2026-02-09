@@ -44,6 +44,12 @@ public class AssessmentService {
         if (request.getSubjectId() == null) {
             throw new BadRequestException("Subject is required");
         }
+        if (request.getName() == null || request.getName().isBlank()) {
+            throw new BadRequestException("Assessment name is required");
+        }
+        if (request.getAssessmentType() == null || request.getAssessmentType().isBlank()) {
+            throw new BadRequestException("Assessment type is required");
+        }
 
         School school = request.getSchoolId() != null
             ? schoolRepository.findById(request.getSchoolId())
@@ -154,6 +160,67 @@ public class AssessmentService {
         return saved;
     }
 
+    public Assessment setStatus(UUID id, String status) {
+        Assessment assessment = get(id);
+        assessment.setStatus(status);
+        return assessmentRepository.save(assessment);
+    }
+
+    public AssessmentWithQuestionsDto addQuestions(UUID assessmentId, List<CreateAssessmentQuestionRequest> questions) {
+        Assessment assessment = get(assessmentId);
+        if (questions == null || questions.isEmpty()) {
+            return getWithQuestions(assessmentId);
+        }
+
+        int maxSequence = assessmentQuestionRepository.findByAssessment_IdOrderBySequenceIndexAsc(assessmentId).stream()
+            .map(AssessmentQuestion::getSequenceIndex)
+            .filter(sequence -> sequence != null)
+            .max(Integer::compareTo)
+            .orElse(0);
+
+        Subject subject = assessment.getSubject();
+        User author = assessment.getLastModifiedBy() != null ? assessment.getLastModifiedBy() : assessment.getCreatedBy();
+
+        int order = maxSequence + 1;
+        for (var questionRequest : questions) {
+            Question question = new Question();
+            question.setSubject(subject);
+            question.setAuthor(author);
+            question.setStem(questionRequest.getStem());
+            question.setQuestionTypeCode(questionRequest.getQuestionTypeCode());
+            question.setMaxMark(questionRequest.getMaxMark() != null ? questionRequest.getMaxMark() : 1.0);
+            if (questionRequest.getDifficulty() != null) {
+                question.setDifficulty(questionRequest.getDifficulty().shortValue());
+            }
+            question.setRubricJson(questionRequest.getRubricJson());
+            Question savedQuestion = questionRepository.save(question);
+
+            AssessmentQuestion assessmentQuestion = new AssessmentQuestion();
+            assessmentQuestion.setAssessment(assessment);
+            assessmentQuestion.setQuestion(savedQuestion);
+            int sequenceIndex = questionRequest.getSequenceIndex() != null ? questionRequest.getSequenceIndex() : order;
+            assessmentQuestion.setSequenceIndex(sequenceIndex);
+            assessmentQuestion.setPoints(questionRequest.getPoints() != null ? questionRequest.getPoints() : savedQuestion.getMaxMark());
+            assessmentQuestionRepository.save(assessmentQuestion);
+            order++;
+        }
+
+        return getWithQuestions(assessmentId);
+    }
+
+    public AssessmentWithQuestionsDto replaceQuestions(UUID assessmentId, List<CreateAssessmentQuestionRequest> questions) {
+        Assessment assessment = get(assessmentId);
+        assessmentQuestionRepository.deleteByAssessment_Id(assessmentId);
+        if (questions == null || questions.isEmpty()) {
+            return getWithQuestions(assessmentId);
+        }
+
+        Subject subject = assessment.getSubject();
+        User author = assessment.getLastModifiedBy() != null ? assessment.getLastModifiedBy() : assessment.getCreatedBy();
+        attachQuestions(assessment, subject, author, questions);
+        return getWithQuestions(assessmentId);
+    }
+
     public void delete(UUID id) {
         Assessment assessment = get(id);
         assessment.setDeletedAt(Instant.now());
@@ -226,6 +293,12 @@ public class AssessmentService {
         }
         int order = 1;
         for (var questionRequest : questions) {
+            if (questionRequest.getStem() == null || questionRequest.getStem().isBlank()) {
+                throw new BadRequestException("Question stem is required");
+            }
+            if (questionRequest.getQuestionTypeCode() == null || questionRequest.getQuestionTypeCode().isBlank()) {
+                throw new BadRequestException("Question type is required");
+            }
             Question question = new Question();
             question.setSubject(subject);
             question.setAuthor(author);
