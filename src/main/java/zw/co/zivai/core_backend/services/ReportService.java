@@ -10,6 +10,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
@@ -34,6 +37,7 @@ public class ReportService {
     private final QuestionRepository questionRepository;
     private final AttemptAnswerRepository attemptAnswerRepository;
     private final TermForecastRepository termForecastRepository;
+    private final ObjectMapper objectMapper;
 
     public CurriculumForecastDto getCurriculumForecast(UUID subjectId) {
         Subject subject = resolveSubject(subjectId);
@@ -110,8 +114,12 @@ public class ReportService {
             .build();
     }
 
-    public TermForecastDto getTermForecast(UUID subjectId, String term) {
+    public TermForecastDto getTermForecast(UUID subjectId, String term, String academicYear, UUID forecastId) {
         Subject subject = resolveSubject(subjectId);
+        TermForecast forecast = resolveForecast(subject != null ? subject.getId() : null, term, academicYear, forecastId);
+        if (subject == null && forecast != null && forecast.getClassSubject() != null) {
+            subject = forecast.getClassSubject().getSubject();
+        }
         if (subject == null) {
             return TermForecastDto.builder()
                 .subjectId(null)
@@ -122,19 +130,47 @@ public class ReportService {
                 .build();
         }
 
-        TermForecast forecast = termForecastRepository.findLatestBySubjectAndTerm(subject.getId(), term).stream()
-            .findFirst()
-            .orElse(null);
-
         CurriculumForecastDto curriculum = getCurriculumForecast(subject.getId());
+        List<String> expectedTopicIds = extractExpectedTopicIds(forecast != null ? forecast.getExpectedTopicIds() : null);
+        if (forecast != null && expectedTopicIds.isEmpty()) {
+            String rawExpected = termForecastRepository.findExpectedTopicIdsTextById(forecast.getId());
+            expectedTopicIds = extractExpectedTopicIdsFromText(rawExpected);
+        }
+        List<CurriculumTopicForecastDto> filteredTopics = curriculum.getTopics();
+        if (!expectedTopicIds.isEmpty()) {
+            Set<String> expectedSet = new HashSet<>(expectedTopicIds);
+            filteredTopics = curriculum.getTopics().stream()
+                .filter(topic -> expectedSet.contains(topic.getId()))
+                .collect(Collectors.toList());
+        }
 
         return TermForecastDto.builder()
             .subjectId(subject.getId().toString())
             .subjectName(subject.getName())
             .term(forecast != null ? forecast.getTerm() : term)
             .expectedCoveragePercent(forecast != null && forecast.getExpectedCoveragePct() != null ? forecast.getExpectedCoveragePct() : 0)
-            .topics(curriculum.getTopics())
+            .expectedTopicIds(expectedTopicIds)
+            .topics(filteredTopics)
             .build();
+    }
+
+    private TermForecast resolveForecast(UUID subjectId, String term, String academicYear, UUID forecastId) {
+        if (forecastId != null) {
+            return termForecastRepository.findByIdAndDeletedAtIsNull(forecastId).orElse(null);
+        }
+        if (subjectId == null || term == null) {
+            return null;
+        }
+        if (academicYear != null && !academicYear.isBlank()) {
+            return termForecastRepository
+                .findLatestBySubjectTermAndYear(subjectId, term, academicYear)
+                .stream()
+                .findFirst()
+                .orElse(null);
+        }
+        return termForecastRepository.findLatestBySubjectAndTerm(subjectId, term).stream()
+            .findFirst()
+            .orElse(null);
     }
 
     private Subject resolveSubject(UUID subjectId) {
@@ -179,6 +215,63 @@ public class ReportService {
         return studentTotals.values().stream()
             .filter(totals -> totals[1] > 0 && (totals[0] / totals[1]) * 100.0 < 50)
             .count();
+    }
+
+    private List<String> extractExpectedTopicIds(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>();
+        if (node.isArray()) {
+            node.forEach(item -> ids.add(item.asText()));
+            return ids;
+        }
+        if (node.isTextual()) {
+            return parseExpectedTopicText(node.asText());
+        }
+        try {
+            List<String> converted = objectMapper.convertValue(
+                node,
+                objectMapper.getTypeFactory().constructCollectionType(List.class, String.class)
+            );
+            if (converted != null) {
+                ids.addAll(converted);
+            }
+        } catch (IllegalArgumentException ignored) {
+            // fall through
+        }
+        if (!ids.isEmpty()) {
+            return ids;
+        }
+        return parseExpectedTopicText(node.toString());
+    }
+
+    private List<String> extractExpectedTopicIdsFromText(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        String candidate = raw;
+        for (int i = 0; i < 2; i += 1) {
+            try {
+                JsonNode parsed = objectMapper.readTree(candidate);
+                if (parsed != null && parsed.isArray()) {
+                    List<String> ids = new ArrayList<>();
+                    parsed.forEach(item -> ids.add(item.asText()));
+                    return ids;
+                }
+                if (parsed != null && parsed.isTextual()) {
+                    candidate = parsed.asText();
+                    continue;
+                }
+            } catch (Exception ignored) {
+                break;
+            }
+        }
+        return List.of();
+    }
+
+    private List<String> parseExpectedTopicText(String raw) {
+        return extractExpectedTopicIdsFromText(raw);
     }
 
     private double roundOneDecimal(double value) {

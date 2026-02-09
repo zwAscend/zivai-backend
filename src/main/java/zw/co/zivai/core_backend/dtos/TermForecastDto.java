@@ -12,5 +12,6 @@ public class TermForecastDto {
     private String subjectName;
     private String term;
     private double expectedCoveragePercent;
+    private List<String> expectedTopicIds;
     private List<CurriculumTopicForecastDto> topics;
 }

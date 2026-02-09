@@ -11,28 +11,58 @@ import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.TermForecastRequest;
+import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.models.lms.ClassSubject;
 import zw.co.zivai.core_backend.models.lms.TermForecast;
+import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.repositories.ClassSubjectRepository;
 import zw.co.zivai.core_backend.repositories.TermForecastRepository;
+import zw.co.zivai.core_backend.repositories.UserRepository;
 
 @Service
 @RequiredArgsConstructor
 public class TermForecastService {
     private final TermForecastRepository termForecastRepository;
     private final ClassSubjectRepository classSubjectRepository;
+    private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
 
     public TermForecast create(TermForecastRequest request) {
         ClassSubject classSubject = resolveClassSubject(request);
+        TermForecast existingActive = termForecastRepository
+            .findByClassSubject_IdAndTermAndAcademicYearAndDeletedAtIsNull(
+                classSubject.getId(), request.getTerm(), request.getAcademicYear())
+            .orElse(null);
+        if (existingActive != null) {
+            throw new BadRequestException("Term forecast already exists for this term and academic year.");
+        }
 
-        TermForecast forecast = new TermForecast();
+        TermForecast forecast = termForecastRepository
+            .findByClassSubject_IdAndTermAndAcademicYear(
+                classSubject.getId(), request.getTerm(), request.getAcademicYear())
+            .orElseGet(TermForecast::new);
+
         forecast.setClassSubject(classSubject);
-        forecast.setTerm(request.getTerm());
-        forecast.setAcademicYear(request.getAcademicYear());
-        forecast.setExpectedCoveragePct(normalizeCoverage(request.getExpectedCoveragePercent()));
-        forecast.setExpectedTopicIds(toJson(request.getExpectedTopicIds()));
-        forecast.setNotes(request.getNotes());
+        forecast.setDeletedAt(null);
+        if (request.getTerm() != null) {
+            forecast.setTerm(request.getTerm());
+        }
+        if (request.getAcademicYear() != null) {
+            forecast.setAcademicYear(request.getAcademicYear());
+        }
+        if (request.getExpectedCoveragePercent() != null) {
+            forecast.setExpectedCoveragePct(normalizeCoverage(request.getExpectedCoveragePercent()));
+        }
+        if (request.getExpectedTopicIds() != null) {
+            forecast.setExpectedTopicIds(toJson(request.getExpectedTopicIds()));
+        }
+        if (request.getNotes() != null) {
+            forecast.setNotes(request.getNotes());
+        }
+        if (request.getTeacherId() != null && forecast.getCreatedBy() == null) {
+            User createdBy = userRepository.findById(request.getTeacherId()).orElse(null);
+            forecast.setCreatedBy(createdBy);
+        }
         return termForecastRepository.save(forecast);
     }
 
@@ -40,9 +70,23 @@ public class TermForecastService {
         TermForecast forecast = termForecastRepository.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new IllegalArgumentException("Term forecast not found"));
 
+        ClassSubject updatedClassSubject = forecast.getClassSubject();
         if (request.getClassSubjectId() != null || request.getSubjectId() != null) {
-            ClassSubject classSubject = resolveClassSubject(request);
-            forecast.setClassSubject(classSubject);
+            updatedClassSubject = resolveClassSubject(request);
+        }
+        String updatedTerm = request.getTerm() != null ? request.getTerm() : forecast.getTerm();
+        String updatedAcademicYear = request.getAcademicYear() != null ? request.getAcademicYear() : forecast.getAcademicYear();
+
+        TermForecast existingActive = termForecastRepository
+            .findByClassSubject_IdAndTermAndAcademicYearAndDeletedAtIsNull(
+                updatedClassSubject.getId(), updatedTerm, updatedAcademicYear)
+            .orElse(null);
+        if (existingActive != null && !existingActive.getId().equals(forecast.getId())) {
+            throw new BadRequestException("Another term forecast already exists for this term and academic year.");
+        }
+
+        if (request.getClassSubjectId() != null || request.getSubjectId() != null) {
+            forecast.setClassSubject(updatedClassSubject);
         }
         if (request.getTerm() != null) {
             forecast.setTerm(request.getTerm());
