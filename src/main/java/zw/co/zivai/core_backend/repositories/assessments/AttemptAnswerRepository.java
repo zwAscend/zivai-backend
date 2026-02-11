@@ -37,4 +37,28 @@ public interface AttemptAnswerRepository extends JpaRepository<AttemptAnswer, UU
           and ae.deletedAt is null
     """)
     List<TopicAnswerStat> findTopicStatsBySubject(@Param("subjectId") UUID subjectId);
+
+    @Query("""
+        select new zw.co.zivai.core_backend.dtos.assessments.TopicAnswerStat(
+            q.topic.id,
+            ae.student.id,
+            aq.id,
+            coalesce(aa.humanScore, aa.aiScore, 0),
+            aa.maxScore
+        )
+        from AttemptAnswer aa
+        join aa.assessmentQuestion aq
+        join aq.question q
+        join aa.assessmentAttempt at
+        join at.assessmentEnrollment ae
+        where q.subject.id = :subjectId
+          and ae.student.id = :studentId
+          and aa.deletedAt is null
+          and aq.deletedAt is null
+          and q.deletedAt is null
+          and at.deletedAt is null
+          and ae.deletedAt is null
+    """)
+    List<TopicAnswerStat> findTopicStatsBySubjectAndStudent(@Param("subjectId") UUID subjectId,
+                                                             @Param("studentId") UUID studentId);
 }

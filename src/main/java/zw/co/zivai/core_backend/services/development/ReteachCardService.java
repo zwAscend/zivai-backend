@@ -130,12 +130,9 @@ public class ReteachCardService {
     }
 
     public List<ReteachCardDto> list(UUID subjectId, UUID topicId, String priority, String status) {
-        List<ReteachCard> cards = reteachCardRepository.findByDeletedAtIsNull();
-        return cards.stream()
-            .filter(card -> subjectId == null || (card.getSubject() != null && subjectId.equals(card.getSubject().getId())))
-            .filter(card -> topicId == null || (card.getTopic() != null && topicId.equals(card.getTopic().getId())))
-            .filter(card -> priority == null || normalizePriority(priority).equals(card.getPriorityCode()))
-            .filter(card -> status == null || normalizeStatus(status).equals(card.getStatusCode()))
+        String normalizedPriority = priority != null && !priority.isBlank() ? normalizePriority(priority) : null;
+        String normalizedStatus = status != null && !status.isBlank() ? normalizeStatus(status) : null;
+        return reteachCardRepository.findFilteredForList(subjectId, topicId, normalizedPriority, normalizedStatus).stream()
             .map(this::toDto)
             .toList();
     }
@@ -188,7 +185,7 @@ public class ReteachCardService {
 
         List<StudentRefDto> affectedStudents = studentIds.isEmpty()
             ? List.of()
-            : userRepository.findAllById(studentIds).stream()
+            : userRepository.findByIdInAndDeletedAtIsNull(studentIds).stream()
             .map(user -> StudentRefDto.builder()
                 .id(user.getId().toString())
                 .firstName(user.getFirstName())
