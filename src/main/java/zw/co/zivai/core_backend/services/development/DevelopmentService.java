@@ -624,13 +624,29 @@ public class DevelopmentService {
     private DevelopmentPlanDto toDevelopmentPlanDto(StudentPlan plan) {
         PlanDto planDto = toPlanDto(plan.getPlan());
         List<DevelopmentPlanDto.StudentSkillProgressDto> progress = new ArrayList<>();
-        if (plan.getPlan() != null) {
+        if (plan.getPlan() != null && plan.getSubject() != null && plan.getStudent() != null) {
+            Map<String, Skill> skillsByName = skillRepository.findBySubject_Id(plan.getSubject().getId()).stream()
+                .filter(skill -> skill.getName() != null && !skill.getName().isBlank())
+                .collect(Collectors.toMap(
+                    skill -> skill.getName().trim().toLowerCase(Locale.ROOT),
+                    skill -> skill,
+                    (left, right) -> left
+                ));
+            Map<UUID, StudentAttribute> attributesBySkillId = studentAttributeRepository
+                .findByStudent_IdAndSkill_Subject_Id(plan.getStudent().getId(), plan.getSubject().getId()).stream()
+                .filter(attribute -> attribute.getSkill() != null)
+                .collect(Collectors.toMap(
+                    attribute -> attribute.getSkill().getId(),
+                    attribute -> attribute,
+                    (left, right) -> left
+                ));
+
             for (PlanDto.PlanSkillDto skillDto : planDto.getSkills()) {
-                StudentAttribute attribute = skillRepository.findBySubject_IdAndNameIgnoreCase(
-                    plan.getSubject().getId(),
-                    skillDto.getName()
-                ).map(skill -> studentAttributeRepository.findByStudent_IdAndSkill_Id(plan.getStudent().getId(), skill.getId()).orElse(null))
-                .orElse(null);
+                if (skillDto.getName() == null || skillDto.getName().isBlank()) {
+                    continue;
+                }
+                Skill skill = skillsByName.get(skillDto.getName().trim().toLowerCase(Locale.ROOT));
+                StudentAttribute attribute = skill != null ? attributesBySkillId.get(skill.getId()) : null;
                 if (attribute != null) {
                     progress.add(DevelopmentPlanDto.StudentSkillProgressDto.builder()
                         .skill(skillDto.getName())

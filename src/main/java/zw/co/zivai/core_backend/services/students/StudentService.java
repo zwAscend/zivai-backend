@@ -2,9 +2,14 @@ package zw.co.zivai.core_backend.services.students;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -41,9 +46,7 @@ public class StudentService {
     private final ClassSubjectRepository classSubjectRepository;
 
     public List<StudentDto> list() {
-        return userRepository.findByRoles_CodeAndDeletedAtIsNull("student").stream()
-            .map(this::toStudentDto)
-            .collect(Collectors.toList());
+        return toStudentDtos(userRepository.findByRoles_CodeAndDeletedAtIsNull("student"));
     }
 
     public List<StudentDto> list(UUID subjectId, UUID classId, UUID classSubjectId) {
@@ -62,38 +65,9 @@ public class StudentService {
     public StudentDto get(UUID id) {
         User user = userRepository.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("Student not found: " + id));
-        return toStudentDto(user);
-    }
-
-    private StudentDto toStudentDto(User user) {
-        List<String> subjectIds = resolveSubjectIds(user.getId());
-        StudentProfile profile = studentProfileRepository.findByUserIdAndDeletedAtIsNull(user.getId()).orElse(null);
-        List<StudentAttribute> attributes = studentAttributeRepository.findByStudent_Id(user.getId());
-
-        double overall = profile != null && profile.getOverall() != null
-            ? profile.getOverall()
-            : computeOverall(attributes);
-        String strength = profile != null && profile.getStrength() != null && !profile.getStrength().isBlank()
-            ? profile.getStrength()
-            : computeStrength(attributes);
-        String performance = profile != null && profile.getPerformance() != null && !profile.getPerformance().isBlank()
-            ? profile.getPerformance()
-            : performanceFromOverall(overall);
-        String engagement = profile != null && profile.getEngagement() != null && !profile.getEngagement().isBlank()
-            ? profile.getEngagement()
-            : engagementFromAttributes(attributes);
-
-        return StudentDto.builder()
-            .id(user.getId().toString())
-            .firstName(user.getFirstName())
-            .lastName(user.getLastName())
-            .email(user.getEmail())
-            .overall(overall)
-            .strength(strength)
-            .performance(performance)
-            .engagement(engagement)
-            .subjects(subjectIds)
-            .build();
+        return toStudentDtos(List.of(user)).stream()
+            .findFirst()
+            .orElseThrow(() -> new NotFoundException("Student not found: " + id));
     }
 
     private List<StudentDto> listByClassSubject(UUID classSubjectId) {
@@ -102,12 +76,14 @@ public class StudentService {
         if (enrolments.isEmpty()) {
             return List.of();
         }
-        return enrolments.stream()
+        List<User> students = enrolments.stream()
             .map(StudentSubjectEnrolment::getStudent)
             .filter(student -> student != null && student.getDeletedAt() == null)
-            .distinct()
-            .map(this::toStudentDto)
+            .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left, HashMap::new))
+            .values()
+            .stream()
             .toList();
+        return toStudentDtos(students);
     }
 
     private List<StudentDto> listByClass(UUID classId) {
@@ -115,24 +91,29 @@ public class StudentService {
         if (enrolments.isEmpty()) {
             return List.of();
         }
-        return enrolments.stream()
+        List<User> students = enrolments.stream()
+            .filter(enrolment -> enrolment.getDeletedAt() == null)
             .map(Enrolment::getStudent)
             .filter(student -> student != null && student.getDeletedAt() == null)
-            .distinct()
-            .map(this::toStudentDto)
+            .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left, HashMap::new))
+            .values()
+            .stream()
             .toList();
+        return toStudentDtos(students);
     }
 
     private List<StudentDto> listBySubject(UUID subjectId) {
         List<StudentSubjectEnrolment> enrolments =
             studentSubjectEnrolmentRepository.findByClassSubject_Subject_IdAndDeletedAtIsNull(subjectId);
         if (!enrolments.isEmpty()) {
-            return enrolments.stream()
+            List<User> students = enrolments.stream()
                 .map(StudentSubjectEnrolment::getStudent)
                 .filter(student -> student != null && student.getDeletedAt() == null)
-                .distinct()
-                .map(this::toStudentDto)
+                .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left, HashMap::new))
+                .values()
+                .stream()
                 .toList();
+            return toStudentDtos(students);
         }
 
         List<ClassSubject> classSubjects = classSubjectRepository.findBySubject_IdAndDeletedAtIsNull(subjectId);
@@ -147,47 +128,149 @@ public class StudentService {
         if (classIds.isEmpty()) {
             return List.of();
         }
-        return classIds.stream()
-            .flatMap(id -> enrolmentRepository.findByClassEntity_Id(id).stream())
+        List<Enrolment> classEnrolments = enrolmentRepository.findByClassEntity_IdIn(classIds.stream().toList());
+        List<User> students = classEnrolments.stream()
+            .filter(enrolment -> enrolment.getDeletedAt() == null)
             .map(Enrolment::getStudent)
             .filter(student -> student != null && student.getDeletedAt() == null)
-            .distinct()
-            .map(this::toStudentDto)
+            .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left, HashMap::new))
+            .values()
+            .stream()
             .toList();
+        return toStudentDtos(students);
     }
 
-    private List<String> resolveSubjectIds(UUID studentId) {
+    private List<StudentDto> toStudentDtos(List<User> students) {
+        if (students == null || students.isEmpty()) {
+            return List.of();
+        }
+
+        List<User> uniqueStudents = students.stream()
+            .filter(Objects::nonNull)
+            .filter(user -> user.getDeletedAt() == null)
+            .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left, LinkedHashMap::new))
+            .values()
+            .stream()
+            .toList();
+        if (uniqueStudents.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> studentIds = uniqueStudents.stream().map(User::getId).toList();
+        Map<UUID, StudentProfile> profilesByStudent = studentProfileRepository.findByUserIdInAndDeletedAtIsNull(studentIds)
+            .stream()
+            .collect(Collectors.toMap(StudentProfile::getUserId, profile -> profile, (left, right) -> left));
+        Map<UUID, List<StudentAttribute>> attributesByStudent = studentAttributeRepository.findByStudent_IdIn(studentIds)
+            .stream()
+            .collect(Collectors.groupingBy(attribute -> attribute.getStudent().getId()));
+
+        Map<UUID, Set<String>> subjectIdsByStudent = resolveSubjectIdsForStudents(studentIds);
+        List<String> fallbackSubjects = fallbackSubjects();
+
+        List<StudentDto> dtos = new ArrayList<>(uniqueStudents.size());
+        for (User user : uniqueStudents) {
+            StudentProfile profile = profilesByStudent.get(user.getId());
+            List<StudentAttribute> attributes = attributesByStudent.getOrDefault(user.getId(), List.of());
+
+            double overall = profile != null && profile.getOverall() != null
+                ? profile.getOverall()
+                : computeOverall(attributes);
+            String strength = profile != null && profile.getStrength() != null && !profile.getStrength().isBlank()
+                ? profile.getStrength()
+                : computeStrength(attributes);
+            String performance = profile != null && profile.getPerformance() != null && !profile.getPerformance().isBlank()
+                ? profile.getPerformance()
+                : performanceFromOverall(overall);
+            String engagement = profile != null && profile.getEngagement() != null && !profile.getEngagement().isBlank()
+                ? profile.getEngagement()
+                : engagementFromAttributes(attributes);
+
+            Set<String> resolvedSubjectIds = subjectIdsByStudent.get(user.getId());
+            List<String> finalSubjects = (resolvedSubjectIds == null || resolvedSubjectIds.isEmpty())
+                ? fallbackSubjects
+                : resolvedSubjectIds.stream().toList();
+
+            dtos.add(StudentDto.builder()
+                .id(user.getId().toString())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .email(user.getEmail())
+                .overall(overall)
+                .strength(strength)
+                .performance(performance)
+                .engagement(engagement)
+                .subjects(finalSubjects)
+                .build());
+        }
+        return dtos;
+    }
+
+    private Map<UUID, Set<String>> resolveSubjectIdsForStudents(List<UUID> studentIds) {
+        if (studentIds == null || studentIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<UUID, Set<String>> subjectsByStudent = new HashMap<>();
+
         List<StudentSubjectEnrolment> directEnrolments =
-            studentSubjectEnrolmentRepository.findByStudent_IdAndDeletedAtIsNull(studentId);
-        if (!directEnrolments.isEmpty()) {
-            return directEnrolments.stream()
-                .map(StudentSubjectEnrolment::getClassSubject)
-                .filter(classSubject -> classSubject != null && classSubject.getSubject() != null)
-                .map(classSubject -> classSubject.getSubject().getId().toString())
-                .distinct()
-                .toList();
-        }
-
-        List<Enrolment> enrolments = enrolmentRepository.findByStudent_Id(studentId);
-        if (enrolments.isEmpty()) {
-            return fallbackSubjects();
-        }
-
-        Set<String> subjectIds = new HashSet<>();
-        for (Enrolment enrolment : enrolments) {
-            if (enrolment.getClassEntity() == null) {
+            studentSubjectEnrolmentRepository.findByStudent_IdInAndDeletedAtIsNull(studentIds);
+        for (StudentSubjectEnrolment enrolment : directEnrolments) {
+            if (enrolment.getStudent() == null || enrolment.getClassSubject() == null || enrolment.getClassSubject().getSubject() == null) {
                 continue;
             }
-            List<ClassSubject> classSubjects =
-                classSubjectRepository.findByClassEntity_IdAndDeletedAtIsNull(enrolment.getClassEntity().getId());
-            for (ClassSubject classSubject : classSubjects) {
-                if (classSubject.getSubject() != null) {
-                    subjectIds.add(classSubject.getSubject().getId().toString());
-                }
-            }
+            subjectsByStudent
+                .computeIfAbsent(enrolment.getStudent().getId(), key -> new HashSet<>())
+                .add(enrolment.getClassSubject().getSubject().getId().toString());
         }
-        List<String> resolved = subjectIds.stream().toList();
-        return resolved.isEmpty() ? fallbackSubjects() : resolved;
+
+        List<UUID> unresolvedStudentIds = studentIds.stream()
+            .filter(id -> !subjectsByStudent.containsKey(id) || subjectsByStudent.get(id).isEmpty())
+            .toList();
+        if (unresolvedStudentIds.isEmpty()) {
+            return subjectsByStudent;
+        }
+
+        List<Enrolment> enrolments = enrolmentRepository.findByStudent_IdIn(unresolvedStudentIds).stream()
+            .filter(enrolment -> enrolment.getDeletedAt() == null)
+            .toList();
+        if (enrolments.isEmpty()) {
+            return subjectsByStudent;
+        }
+
+        Set<UUID> classIds = enrolments.stream()
+            .map(Enrolment::getClassEntity)
+            .filter(Objects::nonNull)
+            .map(ClassEntity::getId)
+            .collect(Collectors.toSet());
+        if (classIds.isEmpty()) {
+            return subjectsByStudent;
+        }
+
+        Map<UUID, Set<String>> subjectsByClass = new HashMap<>();
+        classSubjectRepository.findByClassEntity_IdInAndDeletedAtIsNull(classIds.stream().toList())
+            .forEach(classSubject -> {
+                if (classSubject.getClassEntity() == null || classSubject.getSubject() == null) {
+                    return;
+                }
+                subjectsByClass
+                    .computeIfAbsent(classSubject.getClassEntity().getId(), key -> new HashSet<>())
+                    .add(classSubject.getSubject().getId().toString());
+            });
+
+        for (Enrolment enrolment : enrolments) {
+            if (enrolment.getStudent() == null || enrolment.getClassEntity() == null) {
+                continue;
+            }
+            Set<String> classSubjectIds = subjectsByClass.get(enrolment.getClassEntity().getId());
+            if (classSubjectIds == null || classSubjectIds.isEmpty()) {
+                continue;
+            }
+            subjectsByStudent
+                .computeIfAbsent(enrolment.getStudent().getId(), key -> new HashSet<>())
+                .addAll(classSubjectIds);
+        }
+
+        return subjectsByStudent;
     }
 
     private List<String> fallbackSubjects() {

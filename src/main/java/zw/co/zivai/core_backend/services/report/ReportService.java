@@ -66,9 +66,13 @@ public class ReportService {
         }
 
         List<Topic> topics = topicRepository.findBySubject_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(subject.getId());
-        Map<UUID, Long> questionCounts = questionRepository.findBySubject_IdAndDeletedAtIsNull(subject.getId()).stream()
-            .filter(question -> question.getTopic() != null && question.getTopic().getId() != null)
-            .collect(Collectors.groupingBy(q -> q.getTopic().getId(), Collectors.counting()));
+        Map<UUID, Long> questionCounts = questionRepository.countQuestionsByTopic(subject.getId()).stream()
+            .filter(row -> row != null && row.length >= 2 && row[0] != null)
+            .collect(Collectors.toMap(
+                row -> (UUID) row[0],
+                row -> row[1] instanceof Number number ? number.longValue() : 0L,
+                (left, right) -> left
+            ));
 
         List<TopicAnswerStat> answerStats = attemptAnswerRepository.findTopicStatsBySubject(subject.getId()).stream()
             .filter(stat -> stat.getTopicId() != null)
@@ -171,23 +175,7 @@ public class ReportService {
     }
 
     public ClassReportDto getClassReport(UUID subjectId, UUID classId) {
-        List<AssessmentAttempt> attempts = assessmentAttemptRepository.findAll().stream()
-            .filter(attempt -> attempt.getSubmittedAt() != null)
-            .filter(attempt -> attempt.getDeletedAt() == null)
-            .filter(attempt -> {
-                if (subjectId == null) return true;
-                AssessmentAssignment assignment = attempt.getAssessmentEnrollment().getAssessmentAssignment();
-                Assessment assessment = assignment.getAssessment();
-                return assessment != null && assessment.getSubject() != null
-                    && subjectId.equals(assessment.getSubject().getId());
-            })
-            .filter(attempt -> {
-                if (classId == null) return true;
-                AssessmentAssignment assignment = attempt.getAssessmentEnrollment().getAssessmentAssignment();
-                ClassEntity classEntity = assignment.getClassEntity();
-                return classEntity != null && classId.equals(classEntity.getId());
-            })
-            .toList();
+        List<AssessmentAttempt> attempts = assessmentAttemptRepository.findSubmittedForReport(subjectId, classId);
 
         Map<UUID, double[]> studentTotals = new HashMap<>();
         for (AssessmentAttempt attempt : attempts) {
@@ -262,17 +250,7 @@ public class ReportService {
 
     public StudentReportDto getStudentReport(UUID studentId, UUID subjectId) {
         User student = userRepository.findByIdAndDeletedAtIsNull(studentId).orElse(null);
-        List<AssessmentAttempt> attempts = assessmentAttemptRepository.findByAssessmentEnrollment_Student_Id(studentId).stream()
-            .filter(attempt -> attempt.getSubmittedAt() != null)
-            .filter(attempt -> attempt.getDeletedAt() == null)
-            .filter(attempt -> {
-                if (subjectId == null) return true;
-                AssessmentAssignment assignment = attempt.getAssessmentEnrollment().getAssessmentAssignment();
-                Assessment assessment = assignment.getAssessment();
-                return assessment != null && assessment.getSubject() != null
-                    && subjectId.equals(assessment.getSubject().getId());
-            })
-            .toList();
+        List<AssessmentAttempt> attempts = assessmentAttemptRepository.findSubmittedByStudentForReport(studentId, subjectId);
 
         List<StudentReportAssessmentDto> assessmentSummaries = attempts.stream()
             .map(attempt -> {
@@ -314,9 +292,8 @@ public class ReportService {
 
         List<StudentTopicMasteryDto> masteryGaps = List.of();
         if (resolvedSubjectId != null) {
-            List<TopicAnswerStat> stats = attemptAnswerRepository.findTopicStatsBySubject(resolvedSubjectId).stream()
-                .filter(stat -> studentId.equals(stat.getStudentId()))
-                .toList();
+            List<TopicAnswerStat> stats =
+                attemptAnswerRepository.findTopicStatsBySubjectAndStudent(resolvedSubjectId, studentId);
             Map<UUID, double[]> totalsByTopic = new HashMap<>();
             for (TopicAnswerStat stat : stats) {
                 if (stat.getTopicId() == null || stat.getMaxScore() == null || stat.getMaxScore() == 0) {
