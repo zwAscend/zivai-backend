@@ -10,8 +10,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
-import zw.co.zivai.core_backend.dtos.StudentDto;
-import zw.co.zivai.core_backend.services.StudentService;
+import zw.co.zivai.core_backend.dtos.students.StudentDto;
+import zw.co.zivai.core_backend.services.students.StudentService;
 
 @RestController
 @RequestMapping("/api/students")
