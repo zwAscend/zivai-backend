@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -15,9 +16,11 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.students.StudentDto;
+import zw.co.zivai.core_backend.dtos.students.StudentTeacherDto;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.models.lms.ClassSubject;
 import zw.co.zivai.core_backend.models.lms.ClassEntity;
@@ -68,6 +71,77 @@ public class StudentService {
         return toStudentDtos(List.of(user)).stream()
             .findFirst()
             .orElseThrow(() -> new NotFoundException("Student not found: " + id));
+    }
+
+    @Transactional(readOnly = true)
+    public List<StudentTeacherDto> getTeachers(UUID studentId) {
+        userRepository.findByIdAndDeletedAtIsNull(studentId)
+            .orElseThrow(() -> new NotFoundException("Student not found: " + studentId));
+
+        List<Enrolment> enrolments = enrolmentRepository.findByStudent_Id(studentId).stream()
+            .filter(enrolment -> enrolment.getDeletedAt() == null)
+            .filter(enrolment -> enrolment.getClassEntity() != null && enrolment.getClassEntity().getDeletedAt() == null)
+            .toList();
+        if (enrolments.isEmpty()) {
+            return List.of();
+        }
+
+        Map<UUID, TeacherAccumulator> teacherMap = new LinkedHashMap<>();
+
+        for (Enrolment enrolment : enrolments) {
+            ClassEntity classEntity = enrolment.getClassEntity();
+            if (classEntity == null) {
+                continue;
+            }
+            User homeroomTeacher = classEntity.getHomeroomTeacher();
+            if (homeroomTeacher == null || homeroomTeacher.getDeletedAt() != null) {
+                continue;
+            }
+            TeacherAccumulator accumulator = teacherMap.computeIfAbsent(
+                homeroomTeacher.getId(),
+                key -> TeacherAccumulator.from(homeroomTeacher)
+            );
+            if (classEntity.getName() != null && !classEntity.getName().isBlank()) {
+                String className = classEntity.getName().trim();
+                accumulator.classNames.add(className);
+                accumulator.homeroomClassNames.add(className);
+            }
+        }
+
+        List<UUID> classIds = enrolments.stream()
+            .map(Enrolment::getClassEntity)
+            .filter(Objects::nonNull)
+            .map(ClassEntity::getId)
+            .distinct()
+            .toList();
+        if (!classIds.isEmpty()) {
+            List<ClassSubject> classSubjects = classSubjectRepository.findByClassEntity_IdInAndDeletedAtIsNull(classIds);
+            for (ClassSubject classSubject : classSubjects) {
+                User teacher = classSubject.getTeacher();
+                if (teacher == null || teacher.getDeletedAt() != null) {
+                    continue;
+                }
+                TeacherAccumulator accumulator = teacherMap.computeIfAbsent(
+                    teacher.getId(),
+                    key -> TeacherAccumulator.from(teacher)
+                );
+
+                if (classSubject.getSubject() != null && classSubject.getSubject().getName() != null && !classSubject.getSubject().getName().isBlank()) {
+                    accumulator.subjectNames.add(classSubject.getSubject().getName().trim());
+                }
+                if (classSubject.getClassEntity() != null
+                    && classSubject.getClassEntity().getName() != null
+                    && !classSubject.getClassEntity().getName().isBlank()) {
+                    accumulator.classNames.add(classSubject.getClassEntity().getName().trim());
+                }
+            }
+        }
+
+        return teacherMap.values().stream()
+            .map(TeacherAccumulator::toDto)
+            .sorted(Comparator.comparing(StudentTeacherDto::getLastName, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(StudentTeacherDto::getFirstName, String.CASE_INSENSITIVE_ORDER))
+            .toList();
     }
 
     private List<StudentDto> listByClassSubject(UUID classSubjectId) {
@@ -340,5 +414,38 @@ public class StudentService {
             return "Medium";
         }
         return "Low";
+    }
+
+    private static final class TeacherAccumulator {
+        private final UUID id;
+        private final String firstName;
+        private final String lastName;
+        private final String email;
+        private final Set<String> subjectNames = new LinkedHashSet<>();
+        private final Set<String> classNames = new LinkedHashSet<>();
+        private final Set<String> homeroomClassNames = new LinkedHashSet<>();
+
+        private TeacherAccumulator(UUID id, String firstName, String lastName, String email) {
+            this.id = id;
+            this.firstName = firstName;
+            this.lastName = lastName;
+            this.email = email;
+        }
+
+        private static TeacherAccumulator from(User teacher) {
+            return new TeacherAccumulator(teacher.getId(), teacher.getFirstName(), teacher.getLastName(), teacher.getEmail());
+        }
+
+        private StudentTeacherDto toDto() {
+            return StudentTeacherDto.builder()
+                .id(id.toString())
+                .firstName(firstName)
+                .lastName(lastName)
+                .email(email)
+                .subjectNames(subjectNames.stream().toList())
+                .classNames(classNames.stream().toList())
+                .homeroomClassNames(homeroomClassNames.stream().toList())
+                .build();
+        }
     }
 }
