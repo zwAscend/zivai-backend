@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.students.StudentDto;
+import zw.co.zivai.core_backend.dtos.students.StudentTeacherDto;
 import zw.co.zivai.core_backend.services.students.StudentService;
 
 @RestController
@@ -29,5 +30,10 @@ public class StudentController {
     @GetMapping("/{id}")
     public StudentDto get(@PathVariable UUID id) {
         return studentService.get(id);
+    }
+
+    @GetMapping("/{id}/teachers")
+    public List<StudentTeacherDto> getTeachers(@PathVariable UUID id) {
+        return studentService.getTeachers(id);
     }
 }
