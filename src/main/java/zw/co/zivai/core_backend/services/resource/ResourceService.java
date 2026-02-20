@@ -6,11 +6,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -27,10 +31,14 @@ import zw.co.zivai.core_backend.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.models.lms.Resource;
 import zw.co.zivai.core_backend.models.lms.School;
 import zw.co.zivai.core_backend.models.lms.Subject;
+import zw.co.zivai.core_backend.models.lms.Topic;
+import zw.co.zivai.core_backend.models.lms.TopicResource;
 import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.repositories.resource.ResourceRepository;
+import zw.co.zivai.core_backend.repositories.resource.TopicResourceRepository;
 import zw.co.zivai.core_backend.repositories.school.SchoolRepository;
 import zw.co.zivai.core_backend.repositories.subject.SubjectRepository;
+import zw.co.zivai.core_backend.repositories.subject.TopicRepository;
 import zw.co.zivai.core_backend.repositories.user.UserRepository;
 
 @Service
@@ -39,7 +47,9 @@ public class ResourceService {
     private final ResourceRepository resourceRepository;
     private final SchoolRepository schoolRepository;
     private final SubjectRepository subjectRepository;
+    private final TopicRepository topicRepository;
     private final UserRepository userRepository;
+    private final TopicResourceRepository topicResourceRepository;
 
     private static final Path UPLOAD_ROOT = Path.of("core-backend", "uploads");
 
@@ -97,6 +107,9 @@ public class ResourceService {
             saved.setUrl("/api/resources/content/" + saved.getId());
             saved = resourceRepository.save(saved);
         }
+        if (request.getTopicIds() != null) {
+            syncResourceTopics(saved, request.getTopicIds());
+        }
         return saved;
     }
 
@@ -109,28 +122,56 @@ public class ResourceService {
         } else if (status != null && !status.isBlank()) {
             resources = resourceRepository.findByStatus(status);
         } else {
-            resources = resourceRepository.findAll();
+            resources = resourceRepository.findByDeletedAtIsNull();
         }
+        resources = resources.stream()
+            .filter(resource -> resource.getDeletedAt() == null)
+            .toList();
+
+        Map<UUID, List<String>> topicIdsByResourceId = resolveTopicIdsMap(resources);
 
         return resources.stream()
-            .map(resource -> toDto(resource, false))
+            .map(resource -> toDto(resource, false, topicIdsByResourceId.getOrDefault(resource.getId(), List.of())))
             .toList();
     }
 
     public Resource get(UUID id) {
-        return resourceRepository.findById(id)
+        Resource resource = resourceRepository.findById(id)
             .orElseThrow(() -> new NotFoundException("Resource not found: " + id));
+        if (resource.getDeletedAt() != null) {
+            throw new NotFoundException("Resource not found: " + id);
+        }
+        return resource;
     }
 
     public List<ResourceDto> listBySubject(UUID subjectId) {
-        return resourceRepository.findBySubject_Id(subjectId).stream()
-            .map(resource -> toDto(resource, false))
+        List<Resource> resources = resourceRepository.findBySubject_Id(subjectId).stream()
+            .filter(resource -> resource.getDeletedAt() == null)
+            .toList();
+        Map<UUID, List<String>> topicIdsByResourceId = resolveTopicIdsMap(resources);
+        return resources.stream()
+            .map(resource -> toDto(resource, false, topicIdsByResourceId.getOrDefault(resource.getId(), List.of())))
+            .toList();
+    }
+
+    public List<ResourceDto> listByTopic(UUID topicId) {
+        if (!topicRepository.existsById(topicId)) {
+            throw new NotFoundException("Topic not found: " + topicId);
+        }
+        List<Resource> resources = topicResourceRepository.findByTopic_IdAndDeletedAtIsNullOrderByDisplayOrderAscCreatedAtAsc(topicId).stream()
+            .map(TopicResource::getResource)
+            .filter(Objects::nonNull)
+            .filter(resource -> resource.getDeletedAt() == null)
+            .toList();
+        Map<UUID, List<String>> topicIdsByResourceId = resolveTopicIdsMap(resources);
+        return resources.stream()
+            .map(resource -> toDto(resource, false, topicIdsByResourceId.getOrDefault(resource.getId(), List.of())))
             .toList();
     }
 
     public ResourceDto getContent(UUID id) {
         Resource resource = get(id);
-        return toDto(resource, true);
+        return toDto(resource, true, resolveTopicIds(resource.getId()));
     }
 
     public ResourceDto update(UUID id, UpdateResourceRequest request) {
@@ -186,7 +227,10 @@ public class ResourceService {
         }
 
         Resource saved = resourceRepository.save(resource);
-        return toDto(saved, true);
+        if (request.getTopicIds() != null) {
+            syncResourceTopics(saved, request.getTopicIds());
+        }
+        return toDto(saved, true, resolveTopicIds(saved.getId()));
     }
 
     public Map<String, ResourceCountsDto> getCounts() {
@@ -273,7 +317,7 @@ public class ResourceService {
             throw new BadRequestException("Failed to store file: " + ex.getMessage());
         }
 
-        return toDto(saved, false);
+        return toDto(saved, false, resolveTopicIds(saved.getId()));
     }
 
     public Map<String, String> getDownloadLink(UUID id) {
@@ -291,7 +335,7 @@ public class ResourceService {
         return Path.of(resource.getStoragePath());
     }
 
-    private ResourceDto toDto(Resource resource, boolean includeContent) {
+    private ResourceDto toDto(Resource resource, boolean includeContent, List<String> topicIds) {
         User uploader = resource.getUploadedBy();
         return ResourceDto.builder()
             .id(resource.getId().toString())
@@ -310,6 +354,7 @@ public class ResourceService {
             .contentBody(includeContent ? resource.getContentBody() : null)
             .publishAt(resource.getPublishAt())
             .subject(resource.getSubject() != null ? resource.getSubject().getId().toString() : null)
+            .topicIds(topicIds == null ? List.of() : topicIds)
             .createdAt(resource.getCreatedAt())
             .updatedAt(resource.getUpdatedAt())
             .uploadedBy(ResourceDto.UploadedBy.builder()
@@ -318,6 +363,39 @@ public class ResourceService {
                 .lastName(uploader != null ? uploader.getLastName() : null)
                 .build())
             .build();
+    }
+
+    private List<String> resolveTopicIds(UUID resourceId) {
+        return topicResourceRepository.findByResource_IdAndDeletedAtIsNullOrderByDisplayOrderAscCreatedAtAsc(resourceId).stream()
+            .map(TopicResource::getTopic)
+            .filter(Objects::nonNull)
+            .map(Topic::getId)
+            .map(UUID::toString)
+            .toList();
+    }
+
+    private Map<UUID, List<String>> resolveTopicIdsMap(List<Resource> resources) {
+        if (resources == null || resources.isEmpty()) {
+            return Map.of();
+        }
+        Set<UUID> resourceIds = resources.stream()
+            .map(Resource::getId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        if (resourceIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<UUID, List<String>> topicIdsByResourceId = new HashMap<>();
+        for (TopicResource link : topicResourceRepository.findByResource_IdInAndDeletedAtIsNullOrderByDisplayOrderAscCreatedAtAsc(List.copyOf(resourceIds))) {
+            if (link.getResource() == null || link.getResource().getId() == null || link.getTopic() == null || link.getTopic().getId() == null) {
+                continue;
+            }
+            topicIdsByResourceId
+                .computeIfAbsent(link.getResource().getId(), key -> new java.util.ArrayList<>())
+                .add(link.getTopic().getId().toString());
+        }
+        return topicIdsByResourceId;
     }
 
     private ResourceRecentDto toRecentDto(Resource resource) {
@@ -355,6 +433,62 @@ public class ResourceService {
             return "video";
         }
         return "document";
+    }
+
+    private void syncResourceTopics(Resource resource, List<UUID> requestedTopicIds) {
+        List<UUID> orderedTopicIds = requestedTopicIds == null
+            ? List.of()
+            : requestedTopicIds.stream()
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.collectingAndThen(
+                    java.util.stream.Collectors.toCollection(LinkedHashSet::new),
+                    List::copyOf
+                ));
+
+        List<TopicResource> existingLinks = topicResourceRepository.findByResource_Id(resource.getId());
+        Map<UUID, TopicResource> existingByTopicId = existingLinks.stream()
+            .filter(link -> link.getTopic() != null)
+            .collect(java.util.stream.Collectors.toMap(
+                link -> link.getTopic().getId(),
+                link -> link,
+                (left, right) -> left
+            ));
+
+        Map<UUID, Topic> topicsById = topicRepository.findAllById(orderedTopicIds).stream()
+            .filter(topic -> topic.getDeletedAt() == null)
+            .collect(Collectors.toMap(Topic::getId, topic -> topic));
+
+        Instant now = Instant.now();
+        int order = 0;
+        for (UUID topicId : orderedTopicIds) {
+            Topic topic = topicsById.get(topicId);
+            if (topic == null) {
+                throw new NotFoundException("Topic not found: " + topicId);
+            }
+            if (resource.getSubject() != null
+                && topic.getSubject() != null
+                && !resource.getSubject().getId().equals(topic.getSubject().getId())) {
+                throw new BadRequestException("Topic " + topicId + " does not belong to the resource subject");
+            }
+
+            TopicResource link = existingByTopicId.get(topicId);
+            if (link == null) {
+                link = new TopicResource();
+                link.setResource(resource);
+                link.setTopic(topic);
+            }
+            link.setDeletedAt(null);
+            link.setDisplayOrder(order++);
+            topicResourceRepository.save(link);
+        }
+
+        for (TopicResource link : existingLinks) {
+            UUID topicId = link.getTopic() != null ? link.getTopic().getId() : null;
+            if (topicId != null && !orderedTopicIds.contains(topicId) && link.getDeletedAt() == null) {
+                link.setDeletedAt(now);
+                topicResourceRepository.save(link);
+            }
+        }
     }
 
     private School resolveSchool() {

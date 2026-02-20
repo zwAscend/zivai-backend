@@ -25,6 +25,7 @@ public class ResourceDto {
     String contentBody;
     Instant publishAt;
     String subject;
+    List<String> topicIds;
     Instant createdAt;
     Instant updatedAt;
     UploadedBy uploadedBy;

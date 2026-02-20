@@ -29,20 +29,23 @@ public class CalendarEventController {
 
     @GetMapping
     public List<CalendarEventDto> list(@RequestParam(required = false) String start,
-                                       @RequestParam(required = false) String end) {
+                                       @RequestParam(required = false) String end,
+                                       @RequestParam(required = false) UUID studentId) {
         Instant startInstant = parseInstant(start);
         Instant endInstant = parseInstant(end);
-        return calendarEventService.list(startInstant, endInstant);
+        return calendarEventService.list(startInstant, endInstant, studentId);
     }
 
     @GetMapping("/subject/{subjectId}")
-    public List<CalendarEventDto> listBySubject(@PathVariable UUID subjectId) {
-        return calendarEventService.listBySubject(subjectId);
+    public List<CalendarEventDto> listBySubject(@PathVariable UUID subjectId,
+                                                @RequestParam(required = false) UUID studentId) {
+        return calendarEventService.listBySubject(subjectId, studentId);
     }
 
     @GetMapping("/upcoming")
-    public List<CalendarEventDto> upcoming(@RequestParam(defaultValue = "10") int limit) {
-        return calendarEventService.upcoming(limit);
+    public List<CalendarEventDto> upcoming(@RequestParam(defaultValue = "10") int limit,
+                                           @RequestParam(required = false) UUID studentId) {
+        return calendarEventService.upcoming(limit, studentId);
     }
 
     @PostMapping

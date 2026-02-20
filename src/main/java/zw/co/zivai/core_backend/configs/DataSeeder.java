@@ -1,12 +1,20 @@
 package zw.co.zivai.core_backend.configs;
 
+import java.io.EOFException;
+import java.sql.SQLException;
+import java.sql.SQLRecoverableException;
+import java.sql.SQLTransientException;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import jakarta.annotation.PreDestroy;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -63,6 +71,8 @@ import zw.co.zivai.core_backend.repositories.user.UserRepository;
 @Configuration
 @RequiredArgsConstructor
 public class DataSeeder {
+    private static final Logger LOG = LoggerFactory.getLogger(DataSeeder.class);
+
     private final JdbcTemplate jdbcTemplate;
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
@@ -92,128 +102,217 @@ public class DataSeeder {
     private final ObjectMapper objectMapper;
 
     private static final String DEFAULT_SEEDED_PASSWORD = "TempPass123!";
+    private static final int SEED_MAX_RETRIES = 5;
+    private static final long SEED_RETRY_DELAY_MS = 1500L;
+    private final AtomicBoolean shutdownRequested = new AtomicBoolean(false);
+
+    @PreDestroy
+    void markShutdownRequested() {
+        shutdownRequested.set(true);
+    }
 
     @Bean
     CommandLineRunner seedUsers() {
-        return args -> {
-            ensureAuthSchema();
-            seedExamBoards();
-            seedEnrolmentStatuses();
-            seedAssessmentEnrollmentStatuses();
-            seedGradingStatuses();
-            seedQuestionTypes();
+        return args -> runSeedingWithRetry();
+    }
 
-            Role student = roleRepository.findByCode("student")
-                .orElseGet(() -> roleRepository.save(buildRole("student", "Student")));
-            Role teacher = roleRepository.findByCode("teacher")
-                .orElseGet(() -> roleRepository.save(buildRole("teacher", "Teacher")));
-            Role admin = roleRepository.findByCode("admin")
-                .orElseGet(() -> roleRepository.save(buildRole("admin", "Admin")));
+    private void runSeedingWithRetry() {
+        long delayMs = SEED_RETRY_DELAY_MS;
+        for (int attempt = 1; attempt <= SEED_MAX_RETRIES; attempt++) {
+            if (isShutdownRequested()) {
+                LOG.info("Skipping remaining seed attempts because shutdown is in progress.");
+                return;
+            }
+            try {
+                seedAll();
+                if (attempt > 1) {
+                    LOG.info("Data seeding recovered successfully on attempt {}/{}.", attempt, SEED_MAX_RETRIES);
+                }
+                return;
+            } catch (RuntimeException ex) {
+                if (isShutdownRequested()) {
+                    LOG.info("Seeder interrupted by shutdown; stopping seeding.");
+                    return;
+                }
+                if (!isTransientDbConnectivityIssue(ex) || attempt == SEED_MAX_RETRIES) {
+                    throw ex;
+                }
+                LOG.warn(
+                    "Transient DB connectivity issue while seeding (attempt {}/{}). Retrying in {} ms.",
+                    attempt,
+                    SEED_MAX_RETRIES,
+                    delayMs,
+                    ex
+                );
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException interruptedException) {
+                    Thread.currentThread().interrupt();
+                    LOG.info("Seeder retry sleep interrupted; stopping seeding.");
+                    return;
+                }
+                delayMs *= 2;
+            }
+        }
+    }
 
-            seedUser("teacher@zivai.local", "263712000001", "teacher1", "Tariro", "Moyo", List.of(teacher));
-            seedUser("student@zivai.local", "263712000002", "student1", "Tinashe", "Dube", List.of(student));
-            seedUser("admin@zivai.local", "263712000003", "admin1", "Admin", "User", List.of(admin));
+    private void seedAll() {
+        if (isShutdownRequested()) {
+            return;
+        }
+        ensureAuthSchema();
+        seedExamBoards();
+        seedEnrolmentStatuses();
+        seedAssessmentEnrollmentStatuses();
+        seedGradingStatuses();
+        seedQuestionTypes();
 
-            User teacherUser = userRepository.findByEmail("teacher@zivai.local").orElse(null);
-            User studentUser = userRepository.findByEmail("student@zivai.local").orElse(null);
+        Role student = roleRepository.findByCode("student")
+            .orElseGet(() -> roleRepository.save(buildRole("student", "Student")));
+        Role teacher = roleRepository.findByCode("teacher")
+            .orElseGet(() -> roleRepository.save(buildRole("teacher", "Teacher")));
+        Role admin = roleRepository.findByCode("admin")
+            .orElseGet(() -> roleRepository.save(buildRole("admin", "Admin")));
 
-            School school = schoolRepository.findByCode("ZVHS")
+        seedUser("teacher@zivai.local", "263712000001", "teacher1", "Tariro", "Moyo", List.of(teacher));
+        seedUser("student@zivai.local", "263712000002", "student1", "Tinashe", "Dube", List.of(student));
+        seedUser("admin@zivai.local", "263712000003", "admin1", "Admin", "User", List.of(admin));
+
+        User teacherUser = userRepository.findByEmail("teacher@zivai.local").orElse(null);
+        User studentUser = userRepository.findByEmail("student@zivai.local").orElse(null);
+
+        School school = schoolRepository.findByCode("ZVHS")
+            .orElseGet(() -> {
+                School created = new School();
+                created.setCode("ZVHS");
+                created.setName("zivAI High School");
+                created.setCountryCode("ZW");
+                return schoolRepository.save(created);
+            });
+
+        seedSubject("MATH", "Mathematics", "Core maths for Form 1-4");
+        seedSubject("ENG", "English Language", "Reading, writing, and comprehension");
+        seedSubject("PHY", "Physics", "Mechanics, waves, and electricity");
+
+        Subject mathSubject = subjectRepository.findByCode("MATH").orElse(null);
+        Subject engSubject = subjectRepository.findByCode("ENG").orElse(null);
+
+        ClassEntity classEntity = null;
+        ClassSubject mathLink = null;
+        ClassSubject engLink = null;
+
+        if (teacherUser != null) {
+            classEntity = classRepository.findByCode("FORM2-A")
                 .orElseGet(() -> {
-                    School created = new School();
-                    created.setCode("ZVHS");
-                    created.setName("zivAI High School");
-                    created.setCountryCode("ZW");
-                    return schoolRepository.save(created);
+                    ClassEntity created = new ClassEntity();
+                    created.setSchool(school);
+                    created.setCode("FORM2-A");
+                    created.setName("Form 2A");
+                    created.setGradeLevel("Form 2");
+                    created.setAcademicYear("2026");
+                    created.setHomeroomTeacher(teacherUser);
+                    return classRepository.save(created);
                 });
 
-            seedSubject("MATH", "Mathematics", "Core maths for Form 1-4");
-            seedSubject("ENG", "English Language", "Reading, writing, and comprehension");
-            seedSubject("PHY", "Physics", "Mechanics, waves, and electricity");
-
-            Subject mathSubject = subjectRepository.findByCode("MATH").orElse(null);
-            Subject engSubject = subjectRepository.findByCode("ENG").orElse(null);
-
-            ClassEntity classEntity = null;
-            ClassSubject mathLink = null;
-            ClassSubject engLink = null;
-
-            if (teacherUser != null) {
-                classEntity = classRepository.findByCode("FORM2-A")
-                    .orElseGet(() -> {
-                        ClassEntity created = new ClassEntity();
-                        created.setSchool(school);
-                        created.setCode("FORM2-A");
-                        created.setName("Form 2A");
-                        created.setGradeLevel("Form 2");
-                        created.setAcademicYear("2026");
-                        created.setHomeroomTeacher(teacherUser);
-                        return classRepository.save(created);
-                    });
-
-                if (studentUser != null && enrolmentRepository
-                    .findByClassEntity_IdAndStudent_Id(classEntity.getId(), studentUser.getId())
-                    .isEmpty()) {
-                    Enrolment enrolment = new Enrolment();
-                    enrolment.setClassEntity(classEntity);
-                    enrolment.setStudent(studentUser);
-                    enrolment.setEnrolmentStatusCode("active");
-                        enrolmentRepository.save(enrolment);
-                }
-
-                if (mathSubject != null) {
-                    mathLink = seedClassSubject(school, classEntity, mathSubject, teacherUser, "2026", "Term 1");
-                    seedStudentSubjectEnrolment(studentUser, mathLink);
-                }
-                if (engSubject != null) {
-                    engLink = seedClassSubject(school, classEntity, engSubject, teacherUser, "2026", "Term 1");
-                    seedStudentSubjectEnrolment(studentUser, engLink);
-                }
+            if (studentUser != null && enrolmentRepository
+                .findByClassEntity_IdAndStudent_Id(classEntity.getId(), studentUser.getId())
+                .isEmpty()) {
+                Enrolment enrolment = new Enrolment();
+                enrolment.setClassEntity(classEntity);
+                enrolment.setStudent(studentUser);
+                enrolment.setEnrolmentStatusCode("active");
+                    enrolmentRepository.save(enrolment);
             }
 
             if (mathSubject != null) {
-                List<Topic> mathCurriculum = seedMathCurriculum(mathSubject);
-                if (mathLink != null && !mathCurriculum.isEmpty()) {
-                    List<java.util.UUID> termTopics = mathCurriculum.stream()
-                        .filter(topic -> List.of("6.1", "6.2", "6.3").contains(topic.getCode()))
-                        .map(Topic::getId)
-                        .toList();
-                    if (!termTopics.isEmpty()) {
-                        seedTermForecast(mathLink, teacherUser, "Term 1", "2026", 70.0,
-                            termTopics,
-                            "Focus on number, sets, and consumer arithmetic foundations.");
-                    }
-                }
+                mathLink = seedClassSubject(school, classEntity, mathSubject, teacherUser, "2026", "Term 1");
+                seedStudentSubjectEnrolment(studentUser, mathLink);
             }
-
             if (engSubject != null) {
-                Topic comprehension = seedTopic(engSubject, "COMP", "Reading Comprehension", "Reading and interpretation.", 1);
-                Topic writing = seedTopic(engSubject, "WRIT", "Writing Skills", "Grammar and structured writing.", 2);
-                seedTopic(engSubject, "GRAM", "Grammar & Usage", "Core grammar rules and usage.", 3);
+                engLink = seedClassSubject(school, classEntity, engSubject, teacherUser, "2026", "Term 1");
+                seedStudentSubjectEnrolment(studentUser, engLink);
+            }
+        }
 
-                if (engLink != null) {
-                    seedTermForecast(engLink, teacherUser, "Term 1", "2026", 65.0,
-                        List.of(comprehension.getId(), writing.getId()),
-                        "Prioritize comprehension and writing mastery.");
+        if (mathSubject != null) {
+            List<Topic> mathCurriculum = seedMathCurriculum(mathSubject);
+            if (mathLink != null && !mathCurriculum.isEmpty()) {
+                List<java.util.UUID> termTopics = mathCurriculum.stream()
+                    .filter(topic -> List.of("6.1", "6.2", "6.3").contains(topic.getCode()))
+                    .map(Topic::getId)
+                    .toList();
+                if (!termTopics.isEmpty()) {
+                    seedTermForecast(mathLink, teacherUser, "Term 1", "2026", 70.0,
+                        termTopics,
+                        "Focus on number, sets, and consumer arithmetic foundations.");
                 }
             }
+        }
 
-            if (teacherUser != null) {
-                seedCalendarEvents(school, teacherUser);
+        if (engSubject != null) {
+            Topic comprehension = seedTopic(engSubject, "COMP", "Reading Comprehension", "Reading and interpretation.", 1);
+            Topic writing = seedTopic(engSubject, "WRIT", "Writing Skills", "Grammar and structured writing.", 2);
+            seedTopic(engSubject, "GRAM", "Grammar & Usage", "Core grammar rules and usage.", 3);
+
+            if (engLink != null) {
+                seedTermForecast(engLink, teacherUser, "Term 1", "2026", 65.0,
+                    List.of(comprehension.getId(), writing.getId()),
+                    "Prioritize comprehension and writing mastery.");
+            }
+        }
+
+        if (teacherUser != null) {
+            seedCalendarEvents(school, teacherUser);
+        }
+
+        if (teacherUser != null && studentUser != null) {
+            seedChatData(school, teacherUser, studentUser);
+        }
+
+        if (teacherUser != null && studentUser != null) {
+            seedAssessmentData(school, teacherUser, studentUser, classEntity, mathSubject, mathLink);
+            seedAssessmentData(school, teacherUser, studentUser, classEntity, engSubject, engLink);
+        }
+
+        if (studentUser != null) {
+            seedDevelopmentData(mathSubject, engSubject, studentUser);
+        }
+    }
+
+    private boolean isShutdownRequested() {
+        return shutdownRequested.get() || Thread.currentThread().isInterrupted();
+    }
+
+    private boolean isTransientDbConnectivityIssue(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && (
+                message.contains("password authentication failed") ||
+                message.contains("no password was provided")
+            )) {
+                return false;
             }
 
-            if (teacherUser != null && studentUser != null) {
-                seedChatData(school, teacherUser, studentUser);
+            if (current instanceof SQLTransientException || current instanceof SQLRecoverableException || current instanceof EOFException) {
+                return true;
             }
-
-            if (teacherUser != null && studentUser != null) {
-                seedAssessmentData(school, teacherUser, studentUser, classEntity, mathSubject, mathLink);
-                seedAssessmentData(school, teacherUser, studentUser, classEntity, engSubject, engLink);
+            if (current instanceof SQLException sqlException) {
+                String sqlState = sqlException.getSQLState();
+                if (sqlState != null && sqlState.startsWith("08")) {
+                    return true;
+                }
             }
-
-            if (studentUser != null) {
-                seedDevelopmentData(mathSubject, engSubject, studentUser);
+            if (message != null && (
+                message.contains("SQLSTATE(08006)") ||
+                message.contains("Connection is closed") ||
+                message.contains("An I/O error occurred while sending to the backend")
+            )) {
+                return true;
             }
-        };
+            current = current.getCause();
+        }
+        return false;
     }
 
     private Role buildRole(String code, String name) {

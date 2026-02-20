@@ -252,6 +252,8 @@ public class AssessmentService {
             .map(assessmentQuestion -> {
                 Question question = assessmentQuestion.getQuestion();
                 return AssessmentQuestionDto.builder()
+                    .assessmentQuestionId(assessmentQuestion.getId().toString())
+                    .questionId(question.getId().toString())
                     .id(question.getId().toString())
                     .stem(question.getStem())
                     .questionTypeCode(question.getQuestionTypeCode())
