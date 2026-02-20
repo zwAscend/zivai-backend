@@ -1,10 +1,12 @@
 package zw.co.zivai.core_backend.controllers.development;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,6 +25,7 @@ import zw.co.zivai.core_backend.dtos.development.CreatePlanRequest;
 import zw.co.zivai.core_backend.dtos.development.DevelopmentAttributeDto;
 import zw.co.zivai.core_backend.dtos.development.DevelopmentPlanDto;
 import zw.co.zivai.core_backend.dtos.development.MasterySignalsSummaryDto;
+import zw.co.zivai.core_backend.dtos.development.StudentStreakDto;
 import zw.co.zivai.core_backend.dtos.common.PageResponse;
 import zw.co.zivai.core_backend.dtos.development.PlanDto;
 import zw.co.zivai.core_backend.dtos.development.StudentAttributeUpdateRequest;
@@ -132,5 +135,25 @@ public class DevelopmentController {
                                                              @RequestParam(required = false) UUID classId,
                                                              @RequestParam(required = false) UUID classSubjectId) {
         return developmentService.getMasterySignalsSummary(subjectId, classId, classSubjectId);
+    }
+
+    @GetMapping("/mastery-signals/student/{studentId}")
+    public MasterySignalsSummaryDto getStudentMasterySignalsSummary(@PathVariable UUID studentId,
+                                                                    @RequestParam(required = false) UUID subjectId) {
+        return developmentService.getStudentMasterySignalsSummary(studentId, subjectId);
+    }
+
+    @PostMapping("/streaks/student/{studentId}/touch")
+    public StudentStreakDto touchStudentStreak(@PathVariable UUID studentId,
+                                               @RequestParam(required = false)
+                                               @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate activityDate) {
+        return developmentService.touchStudentStreak(studentId, activityDate);
+    }
+
+    @GetMapping("/streaks/student/{studentId}")
+    public StudentStreakDto getStudentStreak(@PathVariable UUID studentId,
+                                             @RequestParam(required = false)
+                                             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate referenceDate) {
+        return developmentService.getStudentStreak(studentId, referenceDate);
     }
 }

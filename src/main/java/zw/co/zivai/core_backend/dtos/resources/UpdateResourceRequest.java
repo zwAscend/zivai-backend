@@ -23,4 +23,5 @@ public class UpdateResourceRequest {
     private Instant publishAt;
     private Integer displayOrder;
     private String status;
+    private List<UUID> topicIds;
 }

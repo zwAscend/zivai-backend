@@ -4,7 +4,9 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -19,12 +21,16 @@ import zw.co.zivai.core_backend.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.models.lms.CalendarEvent;
 import zw.co.zivai.core_backend.models.lms.ClassSubject;
 import zw.co.zivai.core_backend.models.lms.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.Enrolment;
 import zw.co.zivai.core_backend.models.lms.School;
+import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
 import zw.co.zivai.core_backend.models.lms.Subject;
 import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.repositories.calendar.CalendarEventRepository;
 import zw.co.zivai.core_backend.repositories.classroom.ClassRepository;
 import zw.co.zivai.core_backend.repositories.classroom.ClassSubjectRepository;
+import zw.co.zivai.core_backend.repositories.classroom.EnrolmentRepository;
+import zw.co.zivai.core_backend.repositories.classroom.StudentSubjectEnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.school.SchoolRepository;
 import zw.co.zivai.core_backend.repositories.subject.SubjectRepository;
 import zw.co.zivai.core_backend.repositories.user.UserRepository;
@@ -37,27 +43,46 @@ public class CalendarEventService {
     private final SubjectRepository subjectRepository;
     private final ClassRepository classRepository;
     private final ClassSubjectRepository classSubjectRepository;
+    private final EnrolmentRepository enrolmentRepository;
+    private final StudentSubjectEnrolmentRepository studentSubjectEnrolmentRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
 
     public List<CalendarEventDto> list(Instant start, Instant end) {
+        return list(start, end, null);
+    }
+
+    public List<CalendarEventDto> list(Instant start, Instant end, UUID studentId) {
         List<CalendarEvent> events;
         if (start != null && end != null) {
-            events = calendarEventRepository.findByStartTimeBetween(start, end);
+            events = calendarEventRepository.findByDeletedAtIsNullAndStartTimeBetweenOrderByStartTimeAsc(start, end);
         } else {
-            events = calendarEventRepository.findAll();
+            events = calendarEventRepository.findByDeletedAtIsNullOrderByStartTimeAsc();
         }
+        events = filterByStudentScope(events, studentId);
         return events.stream().map(this::toDto).toList();
     }
 
     public List<CalendarEventDto> listBySubject(UUID subjectId) {
-        return calendarEventRepository.findBySubject_Id(subjectId).stream()
+        return listBySubject(subjectId, null);
+    }
+
+    public List<CalendarEventDto> listBySubject(UUID subjectId, UUID studentId) {
+        List<CalendarEvent> events = calendarEventRepository.findByDeletedAtIsNullAndSubject_IdOrderByStartTimeAsc(subjectId).stream()
+            .toList();
+        events = filterByStudentScope(events, studentId);
+        return events.stream()
             .map(this::toDto)
             .toList();
     }
 
     public List<CalendarEventDto> upcoming(int limit) {
-        List<CalendarEvent> events = calendarEventRepository.findByStartTimeAfterOrderByStartTimeAsc(Instant.now());
+        return upcoming(limit, null);
+    }
+
+    public List<CalendarEventDto> upcoming(int limit, UUID studentId) {
+        List<CalendarEvent> events = calendarEventRepository.findByDeletedAtIsNullAndStartTimeAfterOrderByStartTimeAsc(Instant.now());
+        events = filterByStudentScope(events, studentId);
         if (limit > 0 && events.size() > limit) {
             events = events.subList(0, limit);
         }
@@ -211,5 +236,40 @@ public class CalendarEventService {
             return null;
         }
         return objectMapper.valueToTree(value);
+    }
+
+    private List<CalendarEvent> filterByStudentScope(List<CalendarEvent> events, UUID studentId) {
+        if (studentId == null) {
+            return events;
+        }
+
+        Set<UUID> studentClassIds = enrolmentRepository.findByStudent_Id(studentId).stream()
+            .filter(enrolment -> enrolment.getDeletedAt() == null)
+            .map(Enrolment::getClassEntity)
+            .filter(classEntity -> classEntity != null && classEntity.getDeletedAt() == null)
+            .map(ClassEntity::getId)
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+
+        Set<UUID> studentSubjectIds = studentSubjectEnrolmentRepository.findByStudent_IdAndDeletedAtIsNull(studentId).stream()
+            .map(StudentSubjectEnrolment::getClassSubject)
+            .filter(classSubject -> classSubject != null && classSubject.getSubject() != null)
+            .map(classSubject -> classSubject.getSubject().getId())
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+
+        return events.stream()
+            .filter(event -> isVisibleToStudent(event, studentClassIds, studentSubjectIds))
+            .toList();
+    }
+
+    private boolean isVisibleToStudent(CalendarEvent event, Set<UUID> studentClassIds, Set<UUID> studentSubjectIds) {
+        if (event.isPublic()) {
+            return true;
+        }
+        UUID eventClassId = event.getClassEntity() != null ? event.getClassEntity().getId() : null;
+        if (eventClassId != null && studentClassIds.contains(eventClassId)) {
+            return true;
+        }
+        UUID eventSubjectId = event.getSubject() != null ? event.getSubject().getId() : null;
+        return eventSubjectId != null && studentSubjectIds.contains(eventSubjectId);
     }
 }

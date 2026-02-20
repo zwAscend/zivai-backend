@@ -70,6 +70,11 @@ public class ResourceController {
         return resourceService.listBySubject(subjectId);
     }
 
+    @GetMapping("/topic/{topicId}")
+    public List<ResourceDto> byTopic(@PathVariable UUID topicId) {
+        return resourceService.listByTopic(topicId);
+    }
+
     @GetMapping("/{id}")
     public ResourceDto get(@PathVariable UUID id) {
         return resourceService.getContent(id);

@@ -23,11 +23,13 @@ import lombok.RequiredArgsConstructor;
 import com.fasterxml.jackson.databind.JsonNode;
 import zw.co.zivai.core_backend.dtos.subjects.CreateSubjectRequest;
 import zw.co.zivai.core_backend.dtos.subjects.SubjectDto;
+import zw.co.zivai.core_backend.dtos.subjects.TopicDto;
 import zw.co.zivai.core_backend.dtos.subjects.UpdateSubjectRequest;
 import zw.co.zivai.core_backend.models.lms.ClassSubject;
 import zw.co.zivai.core_backend.models.lms.Subject;
 import zw.co.zivai.core_backend.repositories.classroom.ClassSubjectRepository;
 import zw.co.zivai.core_backend.services.subject.SubjectService;
+import zw.co.zivai.core_backend.services.subject.TopicService;
 
 @RestController
 @RequestMapping("/api/subjects")
@@ -35,6 +37,7 @@ import zw.co.zivai.core_backend.services.subject.SubjectService;
 public class SubjectController {
     private final SubjectService subjectService;
     private final ClassSubjectRepository classSubjectRepository;
+    private final TopicService topicService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -65,6 +68,11 @@ public class SubjectController {
         Subject subject = subjectService.get(id);
         List<ClassSubject> links = classSubjectRepository.findBySubject_IdAndDeletedAtIsNull(id);
         return toDto(subject, links);
+    }
+
+    @GetMapping("/{id}/topics")
+    public List<TopicDto> listTopics(@PathVariable UUID id) {
+        return topicService.listBySubject(id);
     }
 
     @PutMapping("/{id}")

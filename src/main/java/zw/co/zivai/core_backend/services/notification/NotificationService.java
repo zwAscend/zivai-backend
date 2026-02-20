@@ -2,6 +2,7 @@ package zw.co.zivai.core_backend.services.notification;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -48,21 +49,44 @@ public class NotificationService {
     }
 
     public List<Notification> list() {
-        return notificationRepository.findAll();
+        return list(null);
+    }
+
+    public List<Notification> list(UUID recipientId) {
+        if (recipientId == null) {
+            return notificationRepository.findByDeletedAtIsNullOrderByCreatedAtDesc();
+        }
+        return notificationRepository.findByRecipient_IdAndDeletedAtIsNullOrderByCreatedAtDesc(recipientId);
     }
 
     public Notification get(UUID id) {
-        return notificationRepository.findById(id)
+        Notification notification = notificationRepository.findById(id)
             .orElseThrow(() -> new NotFoundException("Notification not found: " + id));
+        if (notification.getDeletedAt() != null) {
+            throw new NotFoundException("Notification not found: " + id);
+        }
+        return notification;
     }
 
 
     public long getUnreadCount() {
-        return notificationRepository.countByReadFalse();
+        return getUnreadCount(null);
+    }
+
+    public long getUnreadCount(UUID recipientId) {
+        if (recipientId == null) {
+            return notificationRepository.countByDeletedAtIsNullAndReadFalse();
+        }
+        return notificationRepository.countByRecipient_IdAndDeletedAtIsNullAndReadFalse(recipientId);
     }
 
     public Notification markAsRead(UUID id) {
+        return markAsRead(id, null);
+    }
+
+    public Notification markAsRead(UUID id, UUID recipientId) {
         Notification notification = get(id);
+        ensureRecipient(notification, recipientId);
         if (!notification.isRead()) {
             notification.setRead(true);
             notification.setReadAt(Instant.now());
@@ -71,18 +95,38 @@ public class NotificationService {
     }
 
     public void markAllAsRead() {
-        List<Notification> notifications = notificationRepository.findAll();
+        markAllAsRead(null);
+    }
+
+    public void markAllAsRead(UUID recipientId) {
+        List<Notification> notifications = recipientId == null
+            ? notificationRepository.findByDeletedAtIsNullAndReadFalse()
+            : notificationRepository.findByRecipient_IdAndDeletedAtIsNullAndReadFalse(recipientId);
         for (Notification notification : notifications) {
-            if (!notification.isRead()) {
-                notification.setRead(true);
-                notification.setReadAt(Instant.now());
-            }
+            notification.setRead(true);
+            notification.setReadAt(Instant.now());
         }
         notificationRepository.saveAll(notifications);
     }
 
     public void delete(UUID id) {
+        delete(id, null);
+    }
+
+    public void delete(UUID id, UUID recipientId) {
         Notification notification = get(id);
-        notificationRepository.delete(notification);
+        ensureRecipient(notification, recipientId);
+        notification.setDeletedAt(Instant.now());
+        notificationRepository.save(notification);
+    }
+
+    private void ensureRecipient(Notification notification, UUID recipientId) {
+        if (recipientId == null) {
+            return;
+        }
+        UUID actualRecipientId = notification.getRecipient() != null ? notification.getRecipient().getId() : null;
+        if (!Objects.equals(actualRecipientId, recipientId)) {
+            throw new NotFoundException("Notification not found for recipient: " + recipientId);
+        }
     }
 }

@@ -25,4 +25,5 @@ public class CreateResourceRequest {
     private Instant publishAt;
     private Integer displayOrder = 0;
     private String status = "active";
+    private List<UUID> topicIds;
 }

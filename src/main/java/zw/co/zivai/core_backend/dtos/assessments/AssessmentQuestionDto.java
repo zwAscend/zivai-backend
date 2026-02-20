@@ -7,6 +7,8 @@ import lombok.Value;
 @Value
 @Builder
 public class AssessmentQuestionDto {
+    String assessmentQuestionId;
+    String questionId;
     String id;
     String stem;
     String questionTypeCode;

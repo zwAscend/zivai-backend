@@ -1,12 +1,16 @@
 package zw.co.zivai.core_backend.services.development;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -23,6 +27,7 @@ import zw.co.zivai.core_backend.dtos.development.DevelopmentPlanDto;
 import zw.co.zivai.core_backend.dtos.development.MasterySignalsSummaryDto;
 import zw.co.zivai.core_backend.dtos.common.PageResponse;
 import zw.co.zivai.core_backend.dtos.development.PlanDto;
+import zw.co.zivai.core_backend.dtos.development.StudentStreakDto;
 import zw.co.zivai.core_backend.dtos.development.StudentAttributeUpdateRequest;
 import zw.co.zivai.core_backend.dtos.development.UpdatePlanProgressRequest;
 import zw.co.zivai.core_backend.dtos.development.UpdateStudentPlanRequest;
@@ -34,6 +39,7 @@ import zw.co.zivai.core_backend.models.lms.PlanStep;
 import zw.co.zivai.core_backend.models.lms.PlanSubskill;
 import zw.co.zivai.core_backend.models.lms.Skill;
 import zw.co.zivai.core_backend.models.lms.StudentAttribute;
+import zw.co.zivai.core_backend.models.lms.StudentActivityDay;
 import zw.co.zivai.core_backend.models.lms.StudentPlan;
 import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
 import zw.co.zivai.core_backend.models.lms.Subject;
@@ -44,6 +50,7 @@ import zw.co.zivai.core_backend.repositories.development.PlanStepRepository;
 import zw.co.zivai.core_backend.repositories.development.PlanSubskillRepository;
 import zw.co.zivai.core_backend.repositories.subject.SkillRepository;
 import zw.co.zivai.core_backend.repositories.development.StudentAttributeRepository;
+import zw.co.zivai.core_backend.repositories.development.StudentActivityDayRepository;
 import zw.co.zivai.core_backend.repositories.development.StudentPlanRepository;
 import zw.co.zivai.core_backend.repositories.classroom.StudentSubjectEnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.subject.SubjectRepository;
@@ -61,6 +68,7 @@ public class DevelopmentService {
     private final PlanSkillRepository planSkillRepository;
     private final PlanSubskillRepository planSubskillRepository;
     private final StudentPlanRepository studentPlanRepository;
+    private final StudentActivityDayRepository studentActivityDayRepository;
     private final StudentSubjectEnrolmentRepository studentSubjectEnrolmentRepository;
     private final SubjectRepository subjectRepository;
     private final EnrolmentRepository enrolmentRepository;
@@ -531,6 +539,108 @@ public class DevelopmentService {
             .build();
     }
 
+    public MasterySignalsSummaryDto getStudentMasterySignalsSummary(UUID studentId, UUID subjectId) {
+        zw.co.zivai.core_backend.dtos.students.StudentDto student = studentService.get(studentId);
+        double overall = student.getOverall();
+        if (subjectId != null) {
+            List<StudentAttribute> attributes = studentAttributeRepository.findByStudent_IdAndSkill_Subject_Id(studentId, subjectId);
+            if (!attributes.isEmpty()) {
+                overall = attributes.stream()
+                    .map(StudentAttribute::getCurrentScore)
+                    .filter(score -> score != null)
+                    .mapToDouble(Double::doubleValue)
+                    .average()
+                    .orElse(overall);
+            }
+        }
+
+        int excellent = 0;
+        int good = 0;
+        int average = 0;
+        int needsImprovement = 0;
+        if (overall >= 85.0) {
+            excellent = 1;
+        } else if (overall >= 70.0) {
+            good = 1;
+        } else if (overall >= 55.0) {
+            average = 1;
+        } else {
+            needsImprovement = 1;
+        }
+
+        double normalizedOverall = Math.round(overall * 10.0) / 10.0;
+        return MasterySignalsSummaryDto.builder()
+            .totalStudents(1)
+            .excellent(excellent)
+            .good(good)
+            .average(average)
+            .needsImprovement(needsImprovement)
+            .averageOverall(normalizedOverall)
+            .build();
+    }
+
+    public StudentStreakDto touchStudentStreak(UUID studentId, LocalDate activityDate) {
+        User student = userRepository.findByIdAndDeletedAtIsNull(studentId)
+            .orElseThrow(() -> new NotFoundException("Student not found: " + studentId));
+
+        LocalDate targetDate = activityDate != null ? activityDate : LocalDate.now(ZoneOffset.UTC);
+        StudentActivityDay entry = studentActivityDayRepository
+            .findByStudent_IdAndActivityDateAndDeletedAtIsNull(studentId, targetDate)
+            .orElseGet(() -> {
+                StudentActivityDay created = new StudentActivityDay();
+                created.setStudent(student);
+                created.setActivityDate(targetDate);
+                created.setActivityCount(0);
+                return created;
+            });
+
+        int nextCount = Math.max(0, entry.getActivityCount() == null ? 0 : entry.getActivityCount()) + 1;
+        entry.setActivityCount(nextCount);
+        entry.setLastActivityAt(Instant.now());
+        studentActivityDayRepository.save(entry);
+
+        return getStudentStreak(studentId, targetDate);
+    }
+
+    public StudentStreakDto getStudentStreak(UUID studentId, LocalDate referenceDate) {
+        userRepository.findByIdAndDeletedAtIsNull(studentId)
+            .orElseThrow(() -> new NotFoundException("Student not found: " + studentId));
+
+        LocalDate pivotDate = referenceDate != null ? referenceDate : LocalDate.now(ZoneOffset.UTC);
+        List<StudentActivityDay> activityDays = studentActivityDayRepository
+            .findTop365ByStudent_IdAndDeletedAtIsNullOrderByActivityDateDesc(studentId);
+
+        Set<LocalDate> activeDates = new HashSet<>();
+        LocalDate lastActiveDate = null;
+        for (StudentActivityDay day : activityDays) {
+            if (day.getActivityDate() == null) {
+                continue;
+            }
+            activeDates.add(day.getActivityDate());
+            if (lastActiveDate == null || day.getActivityDate().isAfter(lastActiveDate)) {
+                lastActiveDate = day.getActivityDate();
+            }
+        }
+
+        boolean activeToday = activeDates.contains(pivotDate);
+        LocalDate streakCursor = pivotDate;
+        if (!activeToday) {
+            LocalDate previousDay = pivotDate.minusDays(1);
+            if (!activeDates.contains(previousDay)) {
+                return buildStudentStreakDto(studentId, 0, false, lastActiveDate);
+            }
+            streakCursor = previousDay;
+        }
+
+        int streakDays = 0;
+        while (activeDates.contains(streakCursor)) {
+            streakDays += 1;
+            streakCursor = streakCursor.minusDays(1);
+        }
+
+        return buildStudentStreakDto(studentId, streakDays, activeToday, lastActiveDate);
+    }
+
     private void applyProgressUpdate(StudentPlan studentPlan, UpdatePlanProgressRequest request) {
         if (request == null) {
             return;
@@ -572,6 +682,23 @@ public class DevelopmentService {
                 studentAttributeRepository.save(attribute);
             }
         }
+    }
+
+    private StudentStreakDto buildStudentStreakDto(UUID studentId, int streakDays, boolean activeToday, LocalDate lastActiveDate) {
+        int normalizedStreakDays = Math.max(0, streakDays);
+        int streakWeeks = normalizedStreakDays == 0 ? 0 : ((normalizedStreakDays - 1) / 7) + 1;
+        int level = Math.max(1, streakWeeks == 0 ? 1 : streakWeeks);
+        int progressToNextWeek = normalizedStreakDays == 0 ? 0 : (int) Math.round((((normalizedStreakDays - 1) % 7) + 1) / 7.0 * 100.0);
+
+        return StudentStreakDto.builder()
+            .studentId(studentId.toString())
+            .streakDays(normalizedStreakDays)
+            .streakWeeks(streakWeeks)
+            .level(level)
+            .progressToNextWeek(progressToNextWeek)
+            .activeToday(activeToday)
+            .lastActiveDate(lastActiveDate)
+            .build();
     }
 
     private PlanDto toPlanDto(Plan plan) {
