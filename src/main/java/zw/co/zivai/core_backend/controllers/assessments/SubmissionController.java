@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.assessments.GradingStatsDto;
 import zw.co.zivai.core_backend.dtos.assessments.ReviewSubmissionRequest;
 import zw.co.zivai.core_backend.dtos.assessments.SubmissionDetailDto;
+import zw.co.zivai.core_backend.dtos.assessments.SubmissionReviewDetailDto;
 import zw.co.zivai.core_backend.dtos.assessments.SubmissionSummaryDto;
 import zw.co.zivai.core_backend.dtos.assessments.SubmitAssessmentAnswersRequest;
 import zw.co.zivai.core_backend.services.assessments.SubmissionService;
@@ -67,6 +68,11 @@ public class SubmissionController {
         return submissionService.getSubmission(submissionId);
     }
 
+    @GetMapping("/{submissionId}/review-detail")
+    public SubmissionReviewDetailDto getSubmissionReviewDetail(@PathVariable UUID submissionId) {
+        return submissionService.getSubmissionReviewDetail(submissionId);
+    }
+
     @GetMapping("/student/{studentId}")
     public List<SubmissionSummaryDto> getStudentSubmissions(@PathVariable UUID studentId) {
         return submissionService.getStudentSubmissions(studentId);
@@ -79,8 +85,24 @@ public class SubmissionController {
     }
 
     @GetMapping("/teacher/pending")
-    public List<SubmissionDetailDto> getPendingSubmissions() {
-        return submissionService.getPendingSubmissions();
+    public List<SubmissionDetailDto> getPendingSubmissions(@RequestParam(required = false) UUID teacherId,
+                                                           @RequestParam(required = false) UUID subjectId,
+                                                           @RequestParam(required = false) UUID classId,
+                                                           @RequestParam(required = false) UUID assessmentId,
+                                                           @RequestParam(required = false) UUID studentId,
+                                                           @RequestParam(required = false) String status,
+                                                           @RequestParam(required = false) Integer page,
+                                                           @RequestParam(required = false) Integer size) {
+        return submissionService.getPendingSubmissions(
+            teacherId,
+            subjectId,
+            classId,
+            assessmentId,
+            studentId,
+            status,
+            page,
+            size
+        );
     }
 
     @GetMapping("/stats")

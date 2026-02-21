@@ -1,7 +1,11 @@
 package zw.co.zivai.core_backend.services.subject;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -11,11 +15,16 @@ import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.subjects.CreateTopicRequest;
 import zw.co.zivai.core_backend.dtos.subjects.CreateCurriculumRequest;
 import zw.co.zivai.core_backend.dtos.subjects.TopicDto;
+import zw.co.zivai.core_backend.dtos.subjects.TopicResourceDto;
+import zw.co.zivai.core_backend.dtos.subjects.TopicWithResourcesDto;
 import zw.co.zivai.core_backend.dtos.subjects.UpdateTopicRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
+import zw.co.zivai.core_backend.models.lms.Resource;
 import zw.co.zivai.core_backend.models.lms.Subject;
 import zw.co.zivai.core_backend.models.lms.Topic;
+import zw.co.zivai.core_backend.models.lms.TopicResource;
+import zw.co.zivai.core_backend.repositories.resource.TopicResourceRepository;
 import zw.co.zivai.core_backend.repositories.subject.SubjectRepository;
 import zw.co.zivai.core_backend.repositories.subject.TopicRepository;
 
@@ -24,11 +33,52 @@ import zw.co.zivai.core_backend.repositories.subject.TopicRepository;
 public class TopicService {
     private final TopicRepository topicRepository;
     private final SubjectRepository subjectRepository;
+    private final TopicResourceRepository topicResourceRepository;
 
     public List<TopicDto> listBySubject(UUID subjectId) {
         return topicRepository.findBySubject_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(subjectId).stream()
             .map(this::toDto)
             .collect(Collectors.toList());
+    }
+
+    public List<TopicWithResourcesDto> listBySubjectWithResources(UUID subjectId) {
+        List<Topic> topics = topicRepository.findBySubject_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(subjectId);
+        if (topics.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> topicIds = topics.stream()
+            .map(Topic::getId)
+            .toList();
+
+        Map<UUID, LinkedHashMap<UUID, TopicResourceDto>> resourcesByTopicId = new HashMap<>();
+        topicResourceRepository
+            .findByTopic_IdInAndDeletedAtIsNullOrderByTopic_SequenceIndexAscDisplayOrderAscCreatedAtAsc(topicIds)
+            .forEach(link -> {
+                Topic topic = link.getTopic();
+                Resource resource = link.getResource();
+                if (topic == null || resource == null || resource.getDeletedAt() != null) {
+                    return;
+                }
+                LinkedHashMap<UUID, TopicResourceDto> topicResources =
+                    resourcesByTopicId.computeIfAbsent(topic.getId(), key -> new LinkedHashMap<>());
+                topicResources.putIfAbsent(resource.getId(), toTopicResourceDto(resource, topic.getId()));
+            });
+
+        return topics.stream()
+            .map(topic -> TopicWithResourcesDto.builder()
+                .id(topic.getId().toString())
+                .subjectId(topic.getSubject() != null ? topic.getSubject().getId().toString() : null)
+                .code(topic.getCode())
+                .name(topic.getName())
+                .description(topic.getDescription() != null ? topic.getDescription() : topic.getObjectives())
+                .objectives(topic.getObjectives() != null ? topic.getObjectives() : topic.getDescription())
+                .sequenceIndex(topic.getSequenceIndex())
+                .resources(new java.util.ArrayList<>(
+                    resourcesByTopicId.getOrDefault(topic.getId(), new LinkedHashMap<>()).values()
+                ))
+                .build())
+            .toList();
     }
 
     public List<TopicDto> createCurriculum(UUID subjectId, CreateCurriculumRequest request) {
@@ -129,5 +179,34 @@ public class TopicService {
             .objectives(objectives)
             .sequenceIndex(topic.getSequenceIndex())
             .build();
+    }
+
+    private TopicResourceDto toTopicResourceDto(Resource resource, UUID topicId) {
+        return TopicResourceDto.builder()
+            .id(resource.getId().toString())
+            .name(resource.getName())
+            .originalName(resource.getOriginalName())
+            .mimeType(resource.getMimeType())
+            .type(normalizeType(resource))
+            .url(resource.getUrl())
+            .contentType(resource.getContentType())
+            .status(resource.getStatus())
+            .publishAt(resource.getPublishAt())
+            .topicIds(List.of(topicId.toString()))
+            .build();
+    }
+
+    private String normalizeType(Resource resource) {
+        if (resource == null) {
+            return "other";
+        }
+        String type = resource.getResType() != null ? resource.getResType().trim().toLowerCase(Locale.ROOT) : "";
+        if (type.isBlank()) {
+            type = "other";
+        }
+        return switch (type) {
+            case "document", "image", "video", "other" -> type;
+            default -> "other";
+        };
     }
 }

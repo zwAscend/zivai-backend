@@ -12,6 +12,8 @@ import zw.co.zivai.core_backend.models.lms.TopicResource;
 public interface TopicResourceRepository extends JpaRepository<TopicResource, UUID> {
     @EntityGraph(attributePaths = {"topic", "resource", "resource.subject", "resource.uploadedBy"})
     List<TopicResource> findByTopic_IdAndDeletedAtIsNullOrderByDisplayOrderAscCreatedAtAsc(UUID topicId);
+    @EntityGraph(attributePaths = {"topic", "resource", "resource.subject", "resource.uploadedBy"})
+    List<TopicResource> findByTopic_IdInAndDeletedAtIsNullOrderByTopic_SequenceIndexAscDisplayOrderAscCreatedAtAsc(List<UUID> topicIds);
     @EntityGraph(attributePaths = {"topic"})
     List<TopicResource> findByResource_IdAndDeletedAtIsNullOrderByDisplayOrderAscCreatedAtAsc(UUID resourceId);
     @EntityGraph(attributePaths = {"topic"})

@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import zw.co.zivai.core_backend.dtos.subjects.CreateSubjectRequest;
 import zw.co.zivai.core_backend.dtos.subjects.SubjectDto;
 import zw.co.zivai.core_backend.dtos.subjects.TopicDto;
+import zw.co.zivai.core_backend.dtos.subjects.TopicWithResourcesDto;
 import zw.co.zivai.core_backend.dtos.subjects.UpdateSubjectRequest;
 import zw.co.zivai.core_backend.models.lms.ClassSubject;
 import zw.co.zivai.core_backend.models.lms.Subject;
@@ -73,6 +74,11 @@ public class SubjectController {
     @GetMapping("/{id}/topics")
     public List<TopicDto> listTopics(@PathVariable UUID id) {
         return topicService.listBySubject(id);
+    }
+
+    @GetMapping("/{id}/topics-with-resources")
+    public List<TopicWithResourcesDto> listTopicsWithResources(@PathVariable UUID id) {
+        return topicService.listBySubjectWithResources(id);
     }
 
     @PutMapping("/{id}")

@@ -3,6 +3,7 @@ package zw.co.zivai.core_backend.controllers.report;
 import java.util.UUID;
 
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.reports.ClassReportDto;
 import zw.co.zivai.core_backend.dtos.reports.CurriculumForecastDto;
+import zw.co.zivai.core_backend.dtos.reports.StudentReportCardDto;
 import zw.co.zivai.core_backend.dtos.reports.StudentReportDto;
 import zw.co.zivai.core_backend.dtos.termforecast.TermForecastDto;
 import zw.co.zivai.core_backend.services.report.ReportService;
@@ -45,5 +47,10 @@ public class ReportController {
     public StudentReportDto studentReport(@RequestParam UUID studentId,
                                           @RequestParam(required = false) UUID subjectId) {
         return reportService.getStudentReport(studentId, subjectId);
+    }
+
+    @GetMapping("/student/{studentId}/report-card")
+    public StudentReportCardDto studentReportCard(@PathVariable UUID studentId) {
+        return reportService.getStudentReportCard(studentId);
     }
 }

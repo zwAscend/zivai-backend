@@ -12,6 +12,7 @@ public interface ClassRepository extends JpaRepository<ClassEntity, UUID> {
     Optional<ClassEntity> findByCode(String code);
     Optional<ClassEntity> findByCodeAndDeletedAtIsNull(String code);
     List<ClassEntity> findAllByDeletedAtIsNull();
+    List<ClassEntity> findByIdInAndDeletedAtIsNull(List<UUID> ids);
     Optional<ClassEntity> findByIdAndDeletedAtIsNull(UUID id);
     long countByDeletedAtIsNull();
 }

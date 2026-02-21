@@ -10,7 +10,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import zw.co.zivai.core_backend.dtos.students.StudentAssessmentDetailDto;
+import zw.co.zivai.core_backend.dtos.students.StudentAssessmentHistoryItemDto;
 import zw.co.zivai.core_backend.dtos.students.StudentDto;
+import zw.co.zivai.core_backend.dtos.students.StudentSubjectOverviewDto;
 import zw.co.zivai.core_backend.dtos.students.StudentTeacherDto;
 import zw.co.zivai.core_backend.services.students.StudentService;
 
@@ -35,5 +38,26 @@ public class StudentController {
     @GetMapping("/{id}/teachers")
     public List<StudentTeacherDto> getTeachers(@PathVariable UUID id) {
         return studentService.getTeachers(id);
+    }
+
+    @GetMapping("/{studentId}/assessments")
+    public List<StudentAssessmentHistoryItemDto> getStudentAssessmentHistory(@PathVariable UUID studentId,
+                                                                             @RequestParam(required = false) String status,
+                                                                             @RequestParam(required = false) UUID subjectId,
+                                                                             @RequestParam(required = false) String from,
+                                                                             @RequestParam(required = false) String to) {
+        return studentService.getStudentAssessments(studentId, status, subjectId, from, to);
+    }
+
+    @GetMapping("/{studentId}/assessments/{assessmentId}")
+    public StudentAssessmentDetailDto getStudentAssessment(@PathVariable UUID studentId,
+                                                           @PathVariable UUID assessmentId) {
+        return studentService.getStudentAssessment(studentId, assessmentId);
+    }
+
+    @GetMapping("/{studentId}/subjects/{subjectId}/overview")
+    public StudentSubjectOverviewDto getSubjectOverview(@PathVariable UUID studentId,
+                                                        @PathVariable UUID subjectId) {
+        return studentService.getSubjectOverview(studentId, subjectId);
     }
 }

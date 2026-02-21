@@ -24,4 +24,7 @@ public interface EnrolmentRepository extends JpaRepository<Enrolment, UUID> {
 
     @EntityGraph(attributePaths = {"student", "classEntity", "classEntity.homeroomTeacher"})
     List<Enrolment> findByClassEntity_IdIn(List<UUID> classIds);
+
+    @EntityGraph(attributePaths = {"student", "classEntity", "classEntity.homeroomTeacher"})
+    List<Enrolment> findByClassEntity_IdInAndDeletedAtIsNull(List<UUID> classIds);
 }

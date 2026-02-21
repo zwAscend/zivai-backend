@@ -1,10 +1,17 @@
 package zw.co.zivai.core_backend.services.notification;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,9 +35,9 @@ public class NotificationService {
     private final ObjectMapper objectMapper;
 
     public Notification create(CreateNotificationRequest request) {
-        School school = schoolRepository.findById(request.getSchoolId())
+        School school = schoolRepository.findByIdAndDeletedAtIsNull(request.getSchoolId())
             .orElseThrow(() -> new NotFoundException("School not found: " + request.getSchoolId()));
-        User recipient = userRepository.findById(request.getRecipientId())
+        User recipient = userRepository.findByIdAndDeletedAtIsNull(request.getRecipientId())
             .orElseThrow(() -> new NotFoundException("User not found: " + request.getRecipientId()));
 
         Notification notification = new Notification();
@@ -48,15 +55,98 @@ public class NotificationService {
         return notificationRepository.save(notification);
     }
 
+    public List<Notification> createBulk(UUID schoolId,
+                                         Collection<UUID> recipientIds,
+                                         String notifType,
+                                         String title,
+                                         String message,
+                                         Object data,
+                                         String priority) {
+        if (schoolId == null || recipientIds == null || recipientIds.isEmpty()) {
+            return List.of();
+        }
+
+        School school = schoolRepository.findByIdAndDeletedAtIsNull(schoolId)
+            .orElseThrow(() -> new NotFoundException("School not found: " + schoolId));
+
+        List<UUID> uniqueRecipients = new ArrayList<>(new LinkedHashSet<>(recipientIds));
+        List<User> recipients = userRepository.findByIdInAndDeletedAtIsNull(uniqueRecipients);
+        if (recipients.isEmpty()) {
+            return List.of();
+        }
+
+        Map<UUID, User> userById = new HashMap<>();
+        for (User recipient : recipients) {
+            userById.put(recipient.getId(), recipient);
+        }
+
+        List<Notification> notifications = new ArrayList<>();
+        for (UUID recipientId : uniqueRecipients) {
+            User recipient = userById.get(recipientId);
+            if (recipient == null) {
+                continue;
+            }
+            Notification notification = new Notification();
+            notification.setSchool(school);
+            notification.setRecipient(recipient);
+            notification.setNotifType(notifType);
+            notification.setTitle(title);
+            notification.setMessage(message);
+            notification.setData(data == null ? null : objectMapper.valueToTree(data));
+            notification.setRead(false);
+            notification.setPriority(priority == null || priority.isBlank() ? "medium" : priority);
+            notifications.add(notification);
+        }
+
+        if (notifications.isEmpty()) {
+            return List.of();
+        }
+        return notificationRepository.saveAll(notifications);
+    }
+
     public List<Notification> list() {
         return list(null);
     }
 
     public List<Notification> list(UUID recipientId) {
-        if (recipientId == null) {
-            return notificationRepository.findByDeletedAtIsNullOrderByCreatedAtDesc();
+        return list(recipientId, null, null, null, null, null);
+    }
+
+    public List<Notification> list(UUID recipientId,
+                                   Boolean read,
+                                   String type,
+                                   String priority,
+                                   Integer page,
+                                   Integer size) {
+        boolean noAdvancedFilters = read == null
+            && (type == null || type.isBlank())
+            && (priority == null || priority.isBlank())
+            && page == null
+            && size == null;
+        if (noAdvancedFilters) {
+            if (recipientId == null) {
+                return notificationRepository.findByDeletedAtIsNullOrderByCreatedAtDesc();
+            }
+            return notificationRepository.findByRecipient_IdAndDeletedAtIsNullOrderByCreatedAtDesc(recipientId);
         }
-        return notificationRepository.findByRecipient_IdAndDeletedAtIsNullOrderByCreatedAtDesc(recipientId);
+
+        int safePage = page == null ? 0 : Math.max(0, page);
+        int safeSize = size == null ? 50 : Math.max(1, Math.min(size, 200));
+        return notificationRepository.findFiltered(
+            recipientId,
+            read,
+            normalizeNullable(type),
+            normalizeNullable(priority),
+            PageRequest.of(safePage, safeSize, Sort.by(Sort.Order.desc("createdAt")))
+        ).getContent();
+    }
+
+    private String normalizeNullable(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isBlank() ? null : trimmed;
     }
 
     public Notification get(UUID id) {

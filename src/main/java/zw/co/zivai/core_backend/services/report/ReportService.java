@@ -20,15 +20,20 @@ import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.reports.ClassReportDto;
 import zw.co.zivai.core_backend.dtos.reports.CurriculumForecastDto;
 import zw.co.zivai.core_backend.dtos.reports.CurriculumTopicForecastDto;
+import zw.co.zivai.core_backend.dtos.reports.StudentReportCardDto;
+import zw.co.zivai.core_backend.dtos.reports.StudentReportCardSubjectDto;
 import zw.co.zivai.core_backend.dtos.reports.StudentReportAssessmentDto;
 import zw.co.zivai.core_backend.dtos.reports.StudentReportDto;
 import zw.co.zivai.core_backend.dtos.reports.StudentTopicMasteryDto;
 import zw.co.zivai.core_backend.dtos.termforecast.TermForecastDto;
+import zw.co.zivai.core_backend.dtos.assessments.SubjectTopicAnswerStat;
 import zw.co.zivai.core_backend.dtos.assessments.TopicAnswerStat;
+import zw.co.zivai.core_backend.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.models.lms.Assessment;
 import zw.co.zivai.core_backend.models.lms.AssessmentAttempt;
 import zw.co.zivai.core_backend.models.lms.AssessmentAssignment;
 import zw.co.zivai.core_backend.models.lms.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
 import zw.co.zivai.core_backend.models.lms.Subject;
 import zw.co.zivai.core_backend.models.lms.TermForecast;
 import zw.co.zivai.core_backend.models.lms.Topic;
@@ -36,6 +41,7 @@ import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.repositories.assessments.AttemptAnswerRepository;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentAttemptRepository;
 import zw.co.zivai.core_backend.repositories.classroom.ClassRepository;
+import zw.co.zivai.core_backend.repositories.classroom.StudentSubjectEnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.assessments.QuestionRepository;
 import zw.co.zivai.core_backend.repositories.subject.SubjectRepository;
 import zw.co.zivai.core_backend.repositories.termforecast.TermForecastRepository;
@@ -53,6 +59,7 @@ public class ReportService {
     private final AssessmentAttemptRepository assessmentAttemptRepository;
     private final ClassRepository classRepository;
     private final UserRepository userRepository;
+    private final StudentSubjectEnrolmentRepository studentSubjectEnrolmentRepository;
     private final ObjectMapper objectMapper;
 
     public CurriculumForecastDto getCurriculumForecast(UUID subjectId) {
@@ -350,6 +357,106 @@ public class ReportService {
             .assessmentCount(assessmentSummaries.size())
             .assessments(assessmentSummaries)
             .masteryGaps(masteryGaps)
+            .build();
+    }
+
+    public StudentReportCardDto getStudentReportCard(UUID studentId) {
+        User student = userRepository.findByIdAndDeletedAtIsNull(studentId)
+            .orElseThrow(() -> new NotFoundException("Student not found: " + studentId));
+
+        Map<UUID, Subject> subjectById = new LinkedHashMap<>();
+        List<StudentSubjectEnrolment> enrolments = studentSubjectEnrolmentRepository
+            .findByStudent_IdAndDeletedAtIsNull(studentId);
+        for (StudentSubjectEnrolment enrolment : enrolments) {
+            Subject subject = enrolment.getClassSubject() != null ? enrolment.getClassSubject().getSubject() : null;
+            if (subject != null && subject.getDeletedAt() == null) {
+                subjectById.putIfAbsent(subject.getId(), subject);
+            }
+        }
+
+        List<AssessmentAttempt> attempts = assessmentAttemptRepository.findSubmittedByStudentForReport(studentId, null);
+        for (AssessmentAttempt attempt : attempts) {
+            Subject subject = attempt.getAssessmentEnrollment().getAssessmentAssignment().getAssessment().getSubject();
+            if (subject != null && subject.getDeletedAt() == null) {
+                subjectById.putIfAbsent(subject.getId(), subject);
+            }
+        }
+
+        Map<UUID, double[]> assessmentTotalsBySubject = new HashMap<>();
+        Map<UUID, Integer> assessmentCountBySubject = new HashMap<>();
+        for (AssessmentAttempt attempt : attempts) {
+            Subject subject = attempt.getAssessmentEnrollment().getAssessmentAssignment().getAssessment().getSubject();
+            if (subject == null) {
+                continue;
+            }
+            Double percent = percentFromAttempt(attempt);
+            if (percent == null) {
+                continue;
+            }
+            UUID subjectId = subject.getId();
+            double[] totals = assessmentTotalsBySubject.computeIfAbsent(subjectId, key -> new double[] {0, 0});
+            totals[0] += percent;
+            totals[1] += 1;
+            assessmentCountBySubject.compute(subjectId, (key, value) -> value == null ? 1 : value + 1);
+        }
+
+        Map<UUID, double[]> masteryTotalsBySubject = new HashMap<>();
+        List<SubjectTopicAnswerStat> topicStats = attemptAnswerRepository.findTopicStatsByStudent(studentId);
+        for (SubjectTopicAnswerStat stat : topicStats) {
+            if (stat.getSubjectId() == null || stat.getMaxScore() == null || stat.getMaxScore() == 0) {
+                continue;
+            }
+            double[] totals = masteryTotalsBySubject.computeIfAbsent(stat.getSubjectId(), key -> new double[] {0, 0});
+            double score = stat.getScore() != null ? stat.getScore() : 0;
+            totals[0] += score;
+            totals[1] += stat.getMaxScore();
+        }
+
+        List<Subject> subjects = new ArrayList<>(subjectById.values());
+        subjects.sort(Comparator.comparing(Subject::getName, String.CASE_INSENSITIVE_ORDER));
+
+        List<StudentReportCardSubjectDto> rows = subjects.stream()
+            .map(subject -> {
+                UUID subjectId = subject.getId();
+                double masteryPercent = 0;
+                double[] masteryTotals = masteryTotalsBySubject.get(subjectId);
+                if (masteryTotals != null && masteryTotals[1] > 0) {
+                    masteryPercent = (masteryTotals[0] / masteryTotals[1]) * 100.0;
+                }
+
+                double assessmentAveragePercent = 0;
+                double[] assessmentTotals = assessmentTotalsBySubject.get(subjectId);
+                if (assessmentTotals != null && assessmentTotals[1] > 0) {
+                    assessmentAveragePercent = assessmentTotals[0] / assessmentTotals[1];
+                }
+
+                double currentPercent = masteryPercent > 0 ? masteryPercent : assessmentAveragePercent;
+                double predictedPercent =
+                    (masteryPercent > 0 && assessmentAveragePercent > 0)
+                        ? (masteryPercent * 0.6) + (assessmentAveragePercent * 0.4)
+                        : currentPercent;
+
+                return StudentReportCardSubjectDto.builder()
+                    .subjectId(subjectId.toString())
+                    .subjectCode(subject.getCode())
+                    .subjectName(subject.getName())
+                    .masteryPercent(roundOneDecimal(masteryPercent))
+                    .currentGrade(gradeFromPercent(currentPercent))
+                    .predictedZimsecGrade(gradeFromPercent(predictedPercent))
+                    .assessmentCount(assessmentCountBySubject.getOrDefault(subjectId, 0))
+                    .build();
+            })
+            .toList();
+
+        String studentName = (student.getFirstName() + " " + student.getLastName()).trim();
+        if (studentName.isBlank()) {
+            studentName = student.getEmail();
+        }
+
+        return StudentReportCardDto.builder()
+            .studentId(student.getId().toString())
+            .studentName(studentName)
+            .subjects(rows)
             .build();
     }
 

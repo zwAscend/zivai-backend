@@ -10,11 +10,25 @@ import org.springframework.data.repository.query.Param;
 
 import zw.co.zivai.core_backend.models.lms.AttemptAnswer;
 import zw.co.zivai.core_backend.dtos.assessments.TopicAnswerStat;
+import zw.co.zivai.core_backend.dtos.assessments.SubjectTopicAnswerStat;
 
 public interface AttemptAnswerRepository extends JpaRepository<AttemptAnswer, UUID> {
     List<AttemptAnswer> findByAssessmentAttempt_Id(UUID assessmentAttemptId);
     Optional<AttemptAnswer> findFirstByAssessmentAttempt_IdOrderByCreatedAtAsc(UUID assessmentAttemptId);
     long countByAssessmentAttempt_Id(UUID assessmentAttemptId);
+    @Query("""
+        select aa
+        from AttemptAnswer aa
+        join fetch aa.assessmentQuestion aq
+        join fetch aq.question q
+        left join fetch aq.rubricScheme rs
+        where aa.assessmentAttempt.id = :assessmentAttemptId
+          and aa.deletedAt is null
+          and aq.deletedAt is null
+          and q.deletedAt is null
+        order by aq.sequenceIndex asc, aa.createdAt asc
+    """)
+    List<AttemptAnswer> findReviewDetailsByAssessmentAttemptId(@Param("assessmentAttemptId") UUID assessmentAttemptId);
 
     @Query("""
         select new zw.co.zivai.core_backend.dtos.assessments.TopicAnswerStat(
@@ -61,4 +75,25 @@ public interface AttemptAnswerRepository extends JpaRepository<AttemptAnswer, UU
     """)
     List<TopicAnswerStat> findTopicStatsBySubjectAndStudent(@Param("subjectId") UUID subjectId,
                                                              @Param("studentId") UUID studentId);
+
+    @Query("""
+        select new zw.co.zivai.core_backend.dtos.assessments.SubjectTopicAnswerStat(
+            q.subject.id,
+            q.topic.id,
+            coalesce(aa.humanScore, aa.aiScore, 0),
+            aa.maxScore
+        )
+        from AttemptAnswer aa
+        join aa.assessmentQuestion aq
+        join aq.question q
+        join aa.assessmentAttempt at
+        join at.assessmentEnrollment ae
+        where ae.student.id = :studentId
+          and aa.deletedAt is null
+          and aq.deletedAt is null
+          and q.deletedAt is null
+          and at.deletedAt is null
+          and ae.deletedAt is null
+    """)
+    List<SubjectTopicAnswerStat> findTopicStatsByStudent(@Param("studentId") UUID studentId);
 }
