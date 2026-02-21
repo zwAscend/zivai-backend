@@ -26,6 +26,11 @@ public interface StudentPlanRepository extends JpaRepository<StudentPlan, UUID> 
     Optional<StudentPlan> findByStudent_IdAndPlan_Id(UUID studentId, UUID planId);
 
     @EntityGraph(attributePaths = {"student", "subject", "plan"})
+    List<StudentPlan> findByStudent_IdInAndDeletedAtIsNull(List<UUID> studentIds);
+    @EntityGraph(attributePaths = {"student", "subject", "plan"})
+    List<StudentPlan> findByStudent_IdInAndSubject_IdAndDeletedAtIsNull(List<UUID> studentIds, UUID subjectId);
+
+    @EntityGraph(attributePaths = {"student", "subject", "plan"})
     Page<StudentPlan> findByDeletedAtIsNull(Pageable pageable);
     @EntityGraph(attributePaths = {"student", "subject", "plan"})
     Page<StudentPlan> findByStatusIgnoreCaseAndDeletedAtIsNull(String status, Pageable pageable);

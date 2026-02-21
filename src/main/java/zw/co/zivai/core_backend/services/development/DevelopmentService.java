@@ -20,6 +20,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import zw.co.zivai.core_backend.dtos.development.AssignPlanRequest;
 import zw.co.zivai.core_backend.dtos.development.CreatePlanRequest;
 import zw.co.zivai.core_backend.dtos.development.DevelopmentAttributeDto;
@@ -38,6 +39,8 @@ import zw.co.zivai.core_backend.models.lms.PlanSkill;
 import zw.co.zivai.core_backend.models.lms.PlanStep;
 import zw.co.zivai.core_backend.models.lms.PlanSubskill;
 import zw.co.zivai.core_backend.models.lms.Skill;
+import zw.co.zivai.core_backend.models.lms.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.Enrolment;
 import zw.co.zivai.core_backend.models.lms.StudentAttribute;
 import zw.co.zivai.core_backend.models.lms.StudentActivityDay;
 import zw.co.zivai.core_backend.models.lms.StudentPlan;
@@ -56,9 +59,11 @@ import zw.co.zivai.core_backend.repositories.classroom.StudentSubjectEnrolmentRe
 import zw.co.zivai.core_backend.repositories.subject.SubjectRepository;
 import zw.co.zivai.core_backend.repositories.classroom.EnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.user.UserRepository;
+import zw.co.zivai.core_backend.services.notification.NotificationService;
 import zw.co.zivai.core_backend.services.students.StudentService;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class DevelopmentService {
     private final SkillRepository skillRepository;
@@ -73,6 +78,7 @@ public class DevelopmentService {
     private final SubjectRepository subjectRepository;
     private final EnrolmentRepository enrolmentRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
     private final StudentService studentService;
 
     public List<DevelopmentAttributeDto> getSubjectAttributes(UUID subjectId) {
@@ -371,6 +377,7 @@ public class DevelopmentService {
         studentPlan.setCurrent(true);
         studentPlan.setDeletedAt(null);
         StudentPlan saved = studentPlanRepository.save(studentPlan);
+        notifyPlanAssigned(saved);
         return toDevelopmentPlanDto(saved);
     }
 
@@ -481,7 +488,9 @@ public class DevelopmentService {
             studentPlan.setCurrent(makeCurrent);
         }
 
-        return toDevelopmentPlanDto(studentPlanRepository.save(studentPlan));
+        StudentPlan savedPlan = studentPlanRepository.save(studentPlan);
+        notifyPlanUpdated(savedPlan, "Plan details were updated.");
+        return toDevelopmentPlanDto(savedPlan);
     }
 
     public void deleteStudentPlan(UUID studentPlanId) {
@@ -639,6 +648,80 @@ public class DevelopmentService {
         }
 
         return buildStudentStreakDto(studentId, streakDays, activeToday, lastActiveDate);
+    }
+
+    private void notifyPlanAssigned(StudentPlan studentPlan) {
+        notifyPlanEvent(
+            studentPlan,
+            "development_plan_assigned",
+            "New development plan assigned",
+            "A development plan has been assigned for " + safeSubjectName(studentPlan) + "."
+        );
+    }
+
+    private void notifyPlanUpdated(StudentPlan studentPlan, String reason) {
+        String suffix = (reason == null || reason.isBlank()) ? "" : " " + reason;
+        notifyPlanEvent(
+            studentPlan,
+            "development_plan_updated",
+            "Development plan updated",
+            "Your development plan for " + safeSubjectName(studentPlan) + " was updated." + suffix
+        );
+    }
+
+    private void notifyPlanEvent(StudentPlan studentPlan,
+                                 String notifType,
+                                 String title,
+                                 String message) {
+        if (studentPlan == null || studentPlan.getStudent() == null || studentPlan.getStudent().getId() == null) {
+            return;
+        }
+        UUID schoolId = resolveStudentSchoolId(studentPlan.getStudent().getId());
+        if (schoolId == null) {
+            return;
+        }
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("studentPlanId", studentPlan.getId() == null ? null : studentPlan.getId().toString());
+        data.put("planId", studentPlan.getPlan() == null || studentPlan.getPlan().getId() == null ? null : studentPlan.getPlan().getId().toString());
+        data.put("subjectId", studentPlan.getSubject() == null || studentPlan.getSubject().getId() == null ? null : studentPlan.getSubject().getId().toString());
+        data.put("subjectName", safeSubjectName(studentPlan));
+        data.put("status", studentPlan.getStatus());
+        data.put("event", notifType);
+
+        try {
+            notificationService.createBulk(
+                schoolId,
+                List.of(studentPlan.getStudent().getId()),
+                notifType,
+                title,
+                message,
+                data,
+                "medium"
+            );
+        } catch (RuntimeException ex) {
+            log.warn("Failed to create {} notification for student plan {}", notifType, studentPlan.getId(), ex);
+        }
+    }
+
+    private UUID resolveStudentSchoolId(UUID studentId) {
+        return enrolmentRepository.findByStudent_Id(studentId).stream()
+            .filter(enrolment -> enrolment.getDeletedAt() == null)
+            .map(Enrolment::getClassEntity)
+            .filter(classEntity -> classEntity != null && classEntity.getDeletedAt() == null)
+            .map(ClassEntity::getSchool)
+            .filter(school -> school != null && school.getDeletedAt() == null && school.getId() != null)
+            .map(school -> school.getId())
+            .findFirst()
+            .orElse(null);
+    }
+
+    private String safeSubjectName(StudentPlan studentPlan) {
+        if (studentPlan != null && studentPlan.getSubject() != null
+            && studentPlan.getSubject().getName() != null && !studentPlan.getSubject().getName().isBlank()) {
+            return studentPlan.getSubject().getName();
+        }
+        return "your subject";
     }
 
     private void applyProgressUpdate(StudentPlan studentPlan, UpdatePlanProgressRequest request) {

@@ -1,11 +1,21 @@
 package zw.co.zivai.core_backend.services.assessments;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -16,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.assessments.GradingStatsDto;
 import zw.co.zivai.core_backend.dtos.assessments.ReviewSubmissionRequest;
 import zw.co.zivai.core_backend.dtos.assessments.SubmissionDetailDto;
+import zw.co.zivai.core_backend.dtos.assessments.SubmissionReviewDetailDto;
 import zw.co.zivai.core_backend.dtos.assessments.SubmissionSummaryDto;
 import zw.co.zivai.core_backend.dtos.assessments.SubmitAssessmentAnswersRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
@@ -29,6 +40,8 @@ import zw.co.zivai.core_backend.models.lms.AssessmentQuestion;
 import zw.co.zivai.core_backend.models.lms.AssessmentResult;
 import zw.co.zivai.core_backend.models.lms.AttemptAnswer;
 import zw.co.zivai.core_backend.models.lms.GradingOverride;
+import zw.co.zivai.core_backend.models.lms.MarkingScheme;
+import zw.co.zivai.core_backend.models.lms.MarkingSchemeItem;
 import zw.co.zivai.core_backend.models.lms.Question;
 import zw.co.zivai.core_backend.models.lms.User;
 import zw.co.zivai.core_backend.repositories.assessments.AnswerAttachmentRepository;
@@ -40,12 +53,15 @@ import zw.co.zivai.core_backend.repositories.assessments.AssessmentRepository;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentResultRepository;
 import zw.co.zivai.core_backend.repositories.assessments.AttemptAnswerRepository;
 import zw.co.zivai.core_backend.repositories.assessments.GradingOverrideRepository;
+import zw.co.zivai.core_backend.repositories.assessments.MarkingSchemeItemRepository;
 import zw.co.zivai.core_backend.repositories.assessments.QuestionRepository;
 import zw.co.zivai.core_backend.repositories.user.UserRepository;
 
 @Service
 @RequiredArgsConstructor
 public class SubmissionService {
+    private static final UUID EMPTY_UUID = new UUID(0L, 0L);
+
     private final AssessmentAssignmentRepository assessmentAssignmentRepository;
     private final AssessmentRepository assessmentRepository;
     private final AssessmentEnrollmentRepository assessmentEnrollmentRepository;
@@ -56,6 +72,7 @@ public class SubmissionService {
     private final AssessmentResultRepository assessmentResultRepository;
     private final QuestionRepository questionRepository;
     private final GradingOverrideRepository gradingOverrideRepository;
+    private final MarkingSchemeItemRepository markingSchemeItemRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
 
@@ -330,6 +347,44 @@ public class SubmissionService {
         return toDetailDto(attempt);
     }
 
+    public SubmissionReviewDetailDto getSubmissionReviewDetail(UUID submissionId) {
+        AssessmentAttempt attempt = assessmentAttemptRepository.findById(submissionId)
+            .orElseThrow(() -> new NotFoundException("Submission not found: " + submissionId));
+
+        List<AttemptAnswer> answers = attemptAnswerRepository.findReviewDetailsByAssessmentAttemptId(submissionId);
+        Map<UUID, List<MarkingSchemeItem>> markingItemsByScheme = loadMarkingItemsByScheme(answers);
+
+        List<SubmissionReviewDetailDto.QuestionReviewDetail> questionDetails = answers.stream()
+            .map(answer -> {
+                AssessmentQuestion assessmentQuestion = answer.getAssessmentQuestion();
+                Question question = assessmentQuestion.getQuestion();
+                List<String> expectedPoints = resolveExpectedMarkingPoints(
+                    assessmentQuestion,
+                    question,
+                    markingItemsByScheme
+                );
+
+                return SubmissionReviewDetailDto.QuestionReviewDetail.builder()
+                    .assessmentQuestionId(assessmentQuestion.getId().toString())
+                    .order(assessmentQuestion.getSequenceIndex())
+                    .prompt(question.getStem())
+                    .studentAnswer(resolveStudentAnswerForReview(answer))
+                    .expectedMarkingPoints(expectedPoints)
+                    .awardedMarks(resolveAwardedMarks(answer))
+                    .maxMarks(answer.getMaxScore())
+                    .feedback(resolvePerQuestionFeedback(answer))
+                    .build();
+            })
+            .toList();
+
+        return SubmissionReviewDetailDto.builder()
+            .submissionId(attempt.getId().toString())
+            .assessmentId(attempt.getAssessmentEnrollment().getAssessmentAssignment().getAssessment().getId().toString())
+            .studentId(attempt.getAssessmentEnrollment().getStudent().getId().toString())
+            .questions(questionDetails)
+            .build();
+    }
+
     public List<SubmissionSummaryDto> getStudentSubmissions(UUID studentId) {
         List<AssessmentAttempt> attempts = assessmentAttemptRepository.findByAssessmentEnrollment_Student_Id(studentId).stream()
             .filter(attempt -> attempt.getSubmittedAt() != null)
@@ -340,11 +395,39 @@ public class SubmissionService {
     }
 
     public List<SubmissionDetailDto> getPendingSubmissions() {
-        List<AssessmentAttempt> attempts = assessmentAttemptRepository.findAll().stream()
-            .filter(attempt -> attempt.getSubmittedAt() != null)
-            .filter(attempt -> !"reviewed".equalsIgnoreCase(attempt.getGradingStatusCode()))
-            .toList();
+        return getPendingSubmissions(null, null, null, null, null, null, 0, 100);
+    }
 
+    public List<SubmissionDetailDto> getPendingSubmissions(UUID teacherId,
+                                                           UUID subjectId,
+                                                           UUID classId,
+                                                           UUID assessmentId,
+                                                           UUID studentId,
+                                                           String status,
+                                                           Integer page,
+                                                           Integer size) {
+        int safePage = page == null ? 0 : Math.max(0, page);
+        int safeSize = size == null ? 1000 : Math.max(1, Math.min(size, 200));
+        Pageable pageable = PageRequest.of(
+            safePage,
+            safeSize,
+            Sort.by(Sort.Order.desc("submittedAt"), Sort.Order.desc("createdAt"))
+        );
+
+        List<UUID> classIds = List.of(EMPTY_UUID);
+        Page<AssessmentAttempt> attemptsPage = assessmentAttemptRepository.findTeacherPending(
+            teacherId,
+            classIds,
+            false,
+            subjectId,
+            classId,
+            assessmentId,
+            studentId,
+            status,
+            pageable
+        );
+
+        List<AssessmentAttempt> attempts = attemptsPage.getContent();
         return attempts.stream()
             .map(this::toDetailDto)
             .toList();
@@ -646,6 +729,229 @@ public class SubmissionService {
             attempt.getAssessmentEnrollment().getAssessmentAssignment().getId(),
             attempt.getAssessmentEnrollment().getStudent().getId()
         ).orElse(null);
+    }
+
+    private Map<UUID, List<MarkingSchemeItem>> loadMarkingItemsByScheme(List<AttemptAnswer> answers) {
+        Set<UUID> schemeIds = answers.stream()
+            .map(AttemptAnswer::getAssessmentQuestion)
+            .map(AssessmentQuestion::getRubricScheme)
+            .filter(scheme -> scheme != null && scheme.getId() != null)
+            .map(MarkingScheme::getId)
+            .collect(Collectors.toSet());
+
+        if (schemeIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return markingSchemeItemRepository.findActiveByMarkingSchemeIds(schemeIds).stream()
+            .collect(Collectors.groupingBy(
+                item -> item.getMarkingScheme().getId(),
+                LinkedHashMap::new,
+                Collectors.toList()
+            ));
+    }
+
+    private List<String> resolveExpectedMarkingPoints(AssessmentQuestion assessmentQuestion,
+                                                      Question question,
+                                                      Map<UUID, List<MarkingSchemeItem>> markingItemsByScheme) {
+        MarkingScheme rubricScheme = assessmentQuestion.getRubricScheme();
+        if (rubricScheme != null && rubricScheme.getId() != null) {
+            List<MarkingSchemeItem> items = markingItemsByScheme.getOrDefault(rubricScheme.getId(), List.of());
+            if (!items.isEmpty()) {
+                return items.stream()
+                    .map(item -> formatMarkingPoint(item.getDescription(), item.getMarkValue()))
+                    .toList();
+            }
+        }
+
+        return extractExpectedPointsFromRubricJson(question.getRubricJson());
+    }
+
+    private List<String> extractExpectedPointsFromRubricJson(JsonNode rubricJson) {
+        if (rubricJson == null || rubricJson.isNull()) {
+            return List.of();
+        }
+
+        List<String> points = new ArrayList<>();
+        if (rubricJson.isArray()) {
+            rubricJson.forEach(node -> appendRubricPoint(points, node));
+            return points;
+        }
+
+        if (!rubricJson.isObject()) {
+            points.add(rubricJson.asText());
+            return points;
+        }
+
+        String[] pointKeys = { "markingPoints", "marking_points", "criteria", "steps", "keyPoints", "key_points" };
+        for (String key : pointKeys) {
+            JsonNode node = rubricJson.path(key);
+            if (node.isArray()) {
+                node.forEach(item -> appendRubricPoint(points, item));
+            } else if (!node.isMissingNode() && !node.isNull()) {
+                appendRubricPoint(points, node);
+            }
+        }
+
+        if (!points.isEmpty()) {
+            return points;
+        }
+
+        String[] fallbackKeys = { "expectedAnswer", "modelAnswer", "correctAnswer", "correct_answer", "answer" };
+        for (String key : fallbackKeys) {
+            JsonNode node = rubricJson.path(key);
+            if (!node.isMissingNode() && !node.isNull() && !node.asText().isBlank()) {
+                points.add(node.asText());
+                break;
+            }
+        }
+
+        return points;
+    }
+
+    private void appendRubricPoint(List<String> points, JsonNode node) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (node.isTextual()) {
+            String value = node.asText();
+            if (!value.isBlank()) {
+                points.add(value);
+            }
+            return;
+        }
+
+        if (!node.isObject()) {
+            String value = node.asText();
+            if (!value.isBlank()) {
+                points.add(value);
+            }
+            return;
+        }
+
+        String description = firstNonBlank(
+            textField(node, "description"),
+            textField(node, "point"),
+            textField(node, "criterion"),
+            textField(node, "text"),
+            textField(node, "expected"),
+            textField(node, "answer")
+        );
+        Double markValue = firstDouble(
+            numberField(node, "mark"),
+            numberField(node, "marks"),
+            numberField(node, "score"),
+            numberField(node, "value")
+        );
+
+        if (description != null) {
+            points.add(formatMarkingPoint(description, markValue));
+        }
+    }
+
+    private String formatMarkingPoint(String description, Double marks) {
+        if (description == null || description.isBlank()) {
+            return null;
+        }
+        if (marks == null) {
+            return description;
+        }
+        return description + " (" + trimTrailingZero(marks) + " marks)";
+    }
+
+    private String resolveStudentAnswerForReview(AttemptAnswer answer) {
+        if (answer.getTextContent() != null && !answer.getTextContent().isBlank()) {
+            return answer.getTextContent();
+        }
+        if (answer.getStudentAnswerText() != null && !answer.getStudentAnswerText().isBlank()) {
+            return answer.getStudentAnswerText();
+        }
+        JsonNode blob = answer.getStudentAnswerBlob();
+        if (blob == null || blob.isNull()) {
+            return null;
+        }
+        if (blob.isTextual()) {
+            return blob.asText();
+        }
+        if (blob.isObject()) {
+            String extracted = firstNonBlank(
+                textField(blob, "answer"),
+                textField(blob, "selected"),
+                textField(blob, "selectedAnswer"),
+                textField(blob, "selectedOption"),
+                textField(blob, "value")
+            );
+            if (extracted != null) {
+                return extracted;
+            }
+        }
+        return blob.toString();
+    }
+
+    private Double resolveAwardedMarks(AttemptAnswer answer) {
+        if (answer.getHumanScore() != null) {
+            return answer.getHumanScore();
+        }
+        return answer.getAiScore();
+    }
+
+    private String resolvePerQuestionFeedback(AttemptAnswer answer) {
+        String feedback = firstNonBlank(answer.getFeedbackText(), textField(answer.getExternalAssessmentData(), "feedback"));
+        return feedback;
+    }
+
+    private String textField(JsonNode node, String key) {
+        if (node == null || node.isNull() || key == null) {
+            return null;
+        }
+        JsonNode child = node.path(key);
+        if (child.isMissingNode() || child.isNull()) {
+            return null;
+        }
+        String value = child.asText();
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private Double numberField(JsonNode node, String key) {
+        if (node == null || node.isNull() || key == null) {
+            return null;
+        }
+        JsonNode child = node.path(key);
+        return toDouble(child);
+    }
+
+    private Double firstDouble(Double... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Double value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String trimTrailingZero(Double value) {
+        if (value == null) {
+            return null;
+        }
+        if (value % 1 == 0) {
+            return String.valueOf(value.intValue());
+        }
+        return value.toString();
     }
 
     private Object parseExternalJson(JsonNode node) {

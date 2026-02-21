@@ -19,5 +19,8 @@ public interface StudentSubjectEnrolmentRepository extends JpaRepository<Student
     List<StudentSubjectEnrolment> findByClassSubject_IdAndDeletedAtIsNull(UUID classSubjectId);
 
     @EntityGraph(attributePaths = {"student", "classSubject", "classSubject.subject"})
+    List<StudentSubjectEnrolment> findByClassSubject_IdInAndDeletedAtIsNull(List<UUID> classSubjectIds);
+
+    @EntityGraph(attributePaths = {"student", "classSubject", "classSubject.subject"})
     List<StudentSubjectEnrolment> findByClassSubject_Subject_IdAndDeletedAtIsNull(UUID subjectId);
 }

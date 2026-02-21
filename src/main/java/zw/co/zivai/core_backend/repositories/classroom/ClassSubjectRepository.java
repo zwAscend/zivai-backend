@@ -12,7 +12,13 @@ public interface ClassSubjectRepository extends JpaRepository<ClassSubject, UUID
     long countByDeletedAtIsNull();
     List<ClassSubject> findAllByDeletedAtIsNull();
     List<ClassSubject> findBySubject_IdAndDeletedAtIsNull(UUID subjectId);
+    @EntityGraph(attributePaths = {"subject", "classEntity", "teacher"})
+    List<ClassSubject> findByTeacher_IdAndDeletedAtIsNull(UUID teacherId);
     List<ClassSubject> findBySubject_IdAndTeacher_IdAndDeletedAtIsNull(UUID subjectId, UUID teacherId);
+    @EntityGraph(attributePaths = {"subject", "classEntity", "teacher"})
+    List<ClassSubject> findByTeacher_IdAndClassEntity_IdAndDeletedAtIsNull(UUID teacherId, UUID classId);
+    @EntityGraph(attributePaths = {"subject", "classEntity", "teacher"})
+    List<ClassSubject> findByTeacher_IdAndClassEntity_IdAndSubject_IdAndDeletedAtIsNull(UUID teacherId, UUID classId, UUID subjectId);
     List<ClassSubject> findByClassEntity_IdAndDeletedAtIsNull(UUID classId);
     @EntityGraph(attributePaths = {"subject", "classEntity", "teacher"})
     List<ClassSubject> findByClassEntity_IdInAndDeletedAtIsNull(List<UUID> classIds);

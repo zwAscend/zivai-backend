@@ -34,8 +34,13 @@ public class NotificationController {
     }
 
     @GetMapping
-    public List<Notification> list(@RequestParam(required = false) UUID recipientId) {
-        return notificationService.list(recipientId);
+    public List<Notification> list(@RequestParam(required = false) UUID recipientId,
+                                   @RequestParam(required = false) Boolean read,
+                                   @RequestParam(required = false, name = "type") String type,
+                                   @RequestParam(required = false) String priority,
+                                   @RequestParam(required = false) Integer page,
+                                   @RequestParam(required = false) Integer size) {
+        return notificationService.list(recipientId, read, type, priority, page, size);
     }
 
     @GetMapping("/unread-count")
