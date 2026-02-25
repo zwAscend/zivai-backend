@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import zw.co.zivai.core_backend.dtos.common.PageResponse;
 import zw.co.zivai.core_backend.dtos.teachers.TeacherAssessmentOverviewDto;
 import zw.co.zivai.core_backend.dtos.teachers.TeacherBasicDto;
@@ -65,6 +66,7 @@ import zw.co.zivai.core_backend.repositories.user.UserRepository;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
+@Slf4j
 public class TeacherService {
     private static final UUID EMPTY_UUID = new UUID(0L, 0L);
 
@@ -212,12 +214,25 @@ public class TeacherService {
             return List.of();
         }
 
-        List<UUID> assignmentIds = assignments.stream().map(AssessmentAssignment::getId).toList();
+        List<AssessmentAssignment> safeAssignments = assignments.stream()
+            .filter(Objects::nonNull)
+            .filter(assignment -> assignment.getId() != null)
+            .filter(assignment -> assignment.getAssessment() != null)
+            .filter(assignment -> assignment.getAssessment().getSubject() != null)
+            .filter(assignment -> assignment.getAssessment().getSubject().getId() != null)
+            .toList();
+        if (safeAssignments.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> assignmentIds = safeAssignments.stream().map(AssessmentAssignment::getId).toList();
 
         List<AssessmentResult> results = studentId != null
             ? assessmentResultRepository.findByAssessmentAssignment_IdInAndStudent_IdAndDeletedAtIsNull(assignmentIds, studentId)
             : assessmentResultRepository.findByAssessmentAssignment_IdInAndDeletedAtIsNull(assignmentIds);
         Map<UUID, List<AssessmentResult>> resultsByAssignment = results.stream()
+            .filter(Objects::nonNull)
+            .filter(result -> result.getAssessmentAssignment() != null && result.getAssessmentAssignment().getId() != null)
             .collect(Collectors.groupingBy(result -> result.getAssessmentAssignment().getId()));
 
         Map<UUID, String> enrollmentStatusByAssignment = new HashMap<>();
@@ -233,7 +248,14 @@ public class TeacherService {
         }
 
         List<TeacherAssessmentOverviewDto> overview = new ArrayList<>();
-        for (AssessmentAssignment assignment : assignments) {
+        for (AssessmentAssignment assignment : safeAssignments) {
+            Assessment assessment = assignment.getAssessment();
+            Subject subject = assessment.getSubject();
+            if (assessment == null || subject == null || subject.getId() == null) {
+                log.warn("Skipping malformed assessment assignment {} in overview for teacher {}", assignment.getId(), teacherId);
+                continue;
+            }
+
             List<AssessmentResult> assignmentResults = resultsByAssignment.getOrDefault(assignment.getId(), List.of());
             if (studentId != null
                 && assignmentResults.isEmpty()
@@ -266,17 +288,17 @@ public class TeacherService {
 
             TeacherAssessmentOverviewDto dto = TeacherAssessmentOverviewDto.builder()
                 .assignmentId(assignment.getId().toString())
-                .assessmentId(assignment.getAssessment().getId().toString())
-                .assessmentName(assignment.getAssessment().getName())
-                .assessmentType(assignment.getAssessment().getAssessmentType())
-                .assessmentStatus(assignment.getAssessment().getStatus())
-                .subjectId(assignment.getAssessment().getSubject().getId().toString())
-                .subjectName(assignment.getAssessment().getSubject().getName())
+                .assessmentId(assessment.getId() != null ? assessment.getId().toString() : null)
+                .assessmentName(assessment.getName())
+                .assessmentType(assessment.getAssessmentType())
+                .assessmentStatus(assessment.getStatus())
+                .subjectId(subject.getId().toString())
+                .subjectName(subject.getName())
                 .classId(assignment.getClassEntity() != null ? assignment.getClassEntity().getId().toString() : null)
                 .className(assignment.getClassEntity() != null ? assignment.getClassEntity().getName() : null)
                 .dueTime(assignment.getDueTime())
                 .published(assignment.isPublished())
-                .aiEnhanced(assignment.getAssessment().isAiEnhanced())
+                .aiEnhanced(assessment.isAiEnhanced())
                 .attempted(attempted)
                 .submitted(attempted)
                 .passed(passed)
