@@ -190,25 +190,28 @@ public class DataSeeder {
                 return schoolRepository.save(created);
             });
 
+        seedSubject("CS", "Computer Science", "Core computer science for Form 3-4");
         seedSubject("MATH", "Mathematics", "Core maths for Form 1-4");
         seedSubject("ENG", "English Language", "Reading, writing, and comprehension");
         seedSubject("PHY", "Physics", "Mechanics, waves, and electricity");
 
+        Subject csSubject = subjectRepository.findByCode("CS").orElse(null);
         Subject mathSubject = subjectRepository.findByCode("MATH").orElse(null);
         Subject engSubject = subjectRepository.findByCode("ENG").orElse(null);
 
         ClassEntity classEntity = null;
+        ClassSubject csLink = null;
         ClassSubject mathLink = null;
         ClassSubject engLink = null;
 
         if (teacherUser != null) {
-            classEntity = classRepository.findByCode("FORM2-A")
+            classEntity = classRepository.findByCode("FORM3-A")
                 .orElseGet(() -> {
                     ClassEntity created = new ClassEntity();
                     created.setSchool(school);
-                    created.setCode("FORM2-A");
-                    created.setName("Form 2A");
-                    created.setGradeLevel("Form 2");
+                    created.setCode("FORM3-A");
+                    created.setName("Form 3A");
+                    created.setGradeLevel("Form 3");
                     created.setAcademicYear("2026");
                     created.setHomeroomTeacher(teacherUser);
                     return classRepository.save(created);
@@ -224,6 +227,10 @@ public class DataSeeder {
                     enrolmentRepository.save(enrolment);
             }
 
+            if (csSubject != null) {
+                csLink = seedClassSubject(school, classEntity, csSubject, teacherUser, "2026", "Term 1");
+                seedStudentSubjectEnrolment(studentUser, csLink);
+            }
             if (mathSubject != null) {
                 mathLink = seedClassSubject(school, classEntity, mathSubject, teacherUser, "2026", "Term 1");
                 seedStudentSubjectEnrolment(studentUser, mathLink);
@@ -231,6 +238,21 @@ public class DataSeeder {
             if (engSubject != null) {
                 engLink = seedClassSubject(school, classEntity, engSubject, teacherUser, "2026", "Term 1");
                 seedStudentSubjectEnrolment(studentUser, engLink);
+            }
+        }
+
+        if (csSubject != null) {
+            List<Topic> csCurriculum = seedComputerScienceCurriculum(csSubject);
+            if (csLink != null && !csCurriculum.isEmpty()) {
+                List<java.util.UUID> termTopics = csCurriculum.stream()
+                    .filter(topic -> List.of("CS.1", "CS.2", "CS.3").contains(topic.getCode()))
+                    .map(Topic::getId)
+                    .toList();
+                if (!termTopics.isEmpty()) {
+                    seedTermForecast(csLink, teacherUser, "Term 1", "2026", 68.0,
+                        termTopics,
+                        "Focus on Form 3 Computer Science foundations: hardware/software, applications, and data representation.");
+                }
             }
         }
 
@@ -270,12 +292,12 @@ public class DataSeeder {
         }
 
         if (teacherUser != null && studentUser != null) {
-            seedAssessmentData(school, teacherUser, studentUser, classEntity, mathSubject, mathLink);
+            seedAssessmentData(school, teacherUser, studentUser, classEntity, csSubject != null ? csSubject : mathSubject, csSubject != null ? csLink : mathLink);
             seedAssessmentData(school, teacherUser, studentUser, classEntity, engSubject, engLink);
         }
 
         if (studentUser != null) {
-            seedDevelopmentData(mathSubject, engSubject, studentUser);
+            seedDevelopmentData(csSubject != null ? csSubject : mathSubject, engSubject, studentUser);
         }
     }
 
@@ -387,18 +409,22 @@ public class DataSeeder {
         }
 
         List<Subject> subjects = subjectRepository.findAll();
+        Subject cs = subjects.stream().filter(s -> "CS".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
         Subject math = subjects.stream().filter(s -> "MATH".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
         Subject eng = subjects.stream().filter(s -> "ENG".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
         Subject phy = subjects.stream().filter(s -> "PHY".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
+        Subject coreSubject = cs != null ? cs : math;
 
         CalendarEvent lesson = new CalendarEvent();
         lesson.setSchool(school);
-        lesson.setTitle("Mathematics Lesson");
-        lesson.setDescription("Introduction to algebraic expressions");
+        lesson.setTitle(coreSubject != null && coreSubject.getName() != null ? coreSubject.getName() + " Lesson" : "Core Subject Lesson");
+        lesson.setDescription(cs != null
+            ? "Introduction to programming concepts and problem-solving."
+            : "Introduction to algebraic expressions");
         lesson.setStartTime(java.time.Instant.now().plusSeconds(2 * 60 * 60));
         lesson.setEndTime(java.time.Instant.now().plusSeconds(3 * 60 * 60));
         lesson.setEventType("lesson");
-        lesson.setSubject(math);
+        lesson.setSubject(coreSubject);
         lesson.setLocation("Room 101");
         lesson.setCreatedBy(teacher);
         calendarEventRepository.save(lesson);
@@ -429,58 +455,58 @@ public class DataSeeder {
 
         CalendarEvent quiz = new CalendarEvent();
         quiz.setSchool(school);
-        quiz.setTitle("Mathematics Quiz");
-        quiz.setDescription("Algebra basics quiz");
+        quiz.setTitle(coreSubject != null && coreSubject.getName() != null ? coreSubject.getName() + " Quiz" : "Weekly Quiz");
+        quiz.setDescription(cs != null ? "Programming fundamentals quiz" : "Algebra basics quiz");
         quiz.setStartTime(java.time.Instant.now().plusSeconds(5 * 24 * 60 * 60));
         quiz.setEndTime(java.time.Instant.now().plusSeconds(5 * 24 * 60 * 60 + 60 * 60));
         quiz.setEventType("quiz");
-        quiz.setSubject(math);
+        quiz.setSubject(coreSubject);
         quiz.setLocation("Room 101");
         quiz.setCreatedBy(teacher);
         calendarEventRepository.save(quiz);
     }
 
-    private void seedDevelopmentData(Subject math, Subject eng, User student) {
-        if (math == null || eng == null) {
+    private void seedDevelopmentData(Subject coreSubject, Subject eng, User student) {
+        if (coreSubject == null || eng == null) {
             return;
         }
 
-        Skill algebra = seedSkill(math, "ALG", "Algebra Fundamentals", "Linear equations and expressions");
-        Skill geometry = seedSkill(math, "GEO", "Geometry Basics", "Angles, shapes, and measurement");
-        Skill statistics = seedSkill(math, "STAT", "Statistics", "Mean, median, and probability");
+        Skill coreProgramming = seedSkill(coreSubject, "CSPROG", "Programming Fundamentals", "Foundations of coding and computational thinking");
+        Skill coreData = seedSkill(coreSubject, "CSDATA", "Data Representation", "Binary, number bases, and logic");
+        Skill coreNetworks = seedSkill(coreSubject, "CSNET", "Networks and Security", "Networking concepts, protocols, and safe systems");
         Skill comprehension = seedSkill(eng, "COMP", "Comprehension", "Reading and interpretation");
         Skill writing = seedSkill(eng, "WRIT", "Writing Skills", "Grammar and structured writing");
 
-        seedStudentAttribute(student, algebra, 62.0, 82.0);
-        seedStudentAttribute(student, geometry, 68.0, 84.0);
-        seedStudentAttribute(student, statistics, 55.0, 78.0);
+        seedStudentAttribute(student, coreProgramming, 62.0, 84.0);
+        seedStudentAttribute(student, coreData, 58.0, 82.0);
+        seedStudentAttribute(student, coreNetworks, 55.0, 80.0);
         seedStudentAttribute(student, comprehension, 72.0, 86.0);
         seedStudentAttribute(student, writing, 65.0, 83.0);
 
-        if (planRepository.findBySubject_Id(math.getId()).isEmpty()) {
-            Plan mathPlan = new Plan();
-            mathPlan.setSubject(math);
-            mathPlan.setName("Math Growth Plan");
-            mathPlan.setDescription("Focus on algebra and geometry fundamentals.");
-            mathPlan.setProgress(0.0);
-            mathPlan.setPotentialOverall(85.0);
-            mathPlan.setEtaDays(30);
-            mathPlan.setPerformance("Average");
-            mathPlan = planRepository.save(mathPlan);
+        if (planRepository.findBySubject_Id(coreSubject.getId()).isEmpty()) {
+            Plan corePlan = new Plan();
+            corePlan.setSubject(coreSubject);
+            corePlan.setName(coreSubject.getName() + " Mastery Plan");
+            corePlan.setDescription("Build core competency through coding practice, data representation, and systems thinking.");
+            corePlan.setProgress(0.0);
+            corePlan.setPotentialOverall(86.0);
+            corePlan.setEtaDays(30);
+            corePlan.setPerformance("Average");
+            corePlan = planRepository.save(corePlan);
 
-            PlanSkill algebraSkill = seedPlanSkill(mathPlan, algebra.getName(), 85.0);
-            seedPlanSubskill(algebraSkill, "Linear equations", 60.0, "yellow");
-            seedPlanSubskill(algebraSkill, "Simplifying expressions", 55.0, "yellow");
+            PlanSkill programmingSkill = seedPlanSkill(corePlan, coreProgramming.getName(), 86.0);
+            seedPlanSubskill(programmingSkill, "Algorithm design", 60.0, "yellow");
+            seedPlanSubskill(programmingSkill, "Structured coding", 58.0, "yellow");
 
-            PlanSkill geometrySkill = seedPlanSkill(mathPlan, geometry.getName(), 82.0);
-            seedPlanSubskill(geometrySkill, "Angles and triangles", 65.0, "yellow");
-            seedPlanSubskill(geometrySkill, "Area and perimeter", 60.0, "yellow");
+            PlanSkill dataSkill = seedPlanSkill(corePlan, coreData.getName(), 82.0);
+            seedPlanSubskill(dataSkill, "Number bases", 63.0, "yellow");
+            seedPlanSubskill(dataSkill, "Logic gates", 57.0, "yellow");
 
-            seedPlanStep(mathPlan, "Review algebra basics", "reading", 1, "https://example.com/algebra");
-            seedPlanStep(mathPlan, "Practice geometry drills", "exercise", 2, null);
-            seedPlanStep(mathPlan, "Weekly mastery quiz", "assessment", 3, null);
+            seedPlanStep(corePlan, "Review algorithm tools and tracing", "reading", 1, null);
+            seedPlanStep(corePlan, "Practice coding drills", "exercise", 2, null);
+            seedPlanStep(corePlan, "Complete weekly practical task", "assessment", 3, null);
 
-            seedStudentPlan(student, mathPlan, math);
+            seedStudentPlan(student, corePlan, coreSubject);
         }
 
         if (planRepository.findBySubject_Id(eng.getId()).isEmpty()) {
@@ -549,6 +575,117 @@ public class DataSeeder {
                 skill.setSequenceIndex(sequenceIndex);
                 return skillRepository.save(skill);
             });
+    }
+
+    private List<Topic> seedComputerScienceCurriculum(Subject subject) {
+        if (subject == null) {
+            return List.of();
+        }
+
+        List<Topic> topics = new java.util.ArrayList<>();
+
+        Topic hardwareSoftware = seedTopic(subject, "CS.1", "Hardware and Software",
+            "Form 3 and 4 focus on hardware devices, operating systems, and maintenance.", 1);
+        topics.add(hardwareSoftware);
+        seedSkill(subject, hardwareSoftware, "CS.1.F3.1", "Hardware devices", "Form 3 focus area.", 1);
+        seedSkill(subject, hardwareSoftware, "CS.1.F3.2", "Operating systems", "Form 3 focus area.", 2);
+        seedSkill(subject, hardwareSoftware, "CS.1.F4.1", "Hardware and software maintenance", "Form 4 focus area.", 3);
+
+        Topic applications = seedTopic(subject, "CS.2", "Application of Computer Science",
+            "Applied computer science domains for Form 3 and Form 4.", 2);
+        topics.add(applications);
+        seedSkill(subject, applications, "CS.2.F3.1", "Agriculture", "Form 3 application area.", 1);
+        seedSkill(subject, applications, "CS.2.F3.2", "Computer aided manufacturing", "Form 3 application area.", 2);
+        seedSkill(subject, applications, "CS.2.F3.3", "Intelligent systems", "Form 3 application area.", 3);
+        seedSkill(subject, applications, "CS.2.F3.4", "Wildlife management", "Form 3 application area.", 4);
+        seedSkill(subject, applications, "CS.2.F3.5", "Mining", "Form 3 application area.", 5);
+        seedSkill(subject, applications, "CS.2.F4.1", "Agriculture", "Form 4 application area.", 6);
+        seedSkill(subject, applications, "CS.2.F4.2", "Ambient systems", "Form 4 application area.", 7);
+        seedSkill(subject, applications, "CS.2.F4.3", "Geographic Information System", "Form 4 application area.", 8);
+
+        Topic dataRepresentation = seedTopic(subject, "CS.3", "Data Representation",
+            "Form 3 and 4 data encoding, storage, and logic concepts.", 3);
+        topics.add(dataRepresentation);
+        seedSkill(subject, dataRepresentation, "CS.3.F3.1", "Units of storage", "Form 3 focus area.", 1);
+        seedSkill(subject, dataRepresentation, "CS.3.F3.2", "Number bases", "Form 3 focus area.", 2);
+        seedSkill(subject, dataRepresentation, "CS.3.F4.1", "Logic gates", "Form 4 focus area.", 3);
+        seedSkill(subject, dataRepresentation, "CS.3.F4.2", "Truth tables", "Form 4 focus area.", 4);
+
+        Topic networks = seedTopic(subject, "CS.4", "Communication Networks and Internet Technologies",
+            "Form 3 and 4 communication technologies and networking infrastructure.", 4);
+        topics.add(networks);
+        seedSkill(subject, networks, "CS.4.F3.1", "Mobile technology", "Form 3 focus area.", 1);
+        seedSkill(subject, networks, "CS.4.F3.2", "Cloud services", "Form 3 focus area.", 2);
+        seedSkill(subject, networks, "CS.4.F4.1", "Network protocols", "Form 4 focus area.", 3);
+        seedSkill(subject, networks, "CS.4.F4.2", "Networking devices", "Form 4 focus area.", 4);
+
+        Topic securityEthics = seedTopic(subject, "CS.5", "Security and Ethics (Unhu/Ubuntu/Vumunhu)",
+            "Form 3 and 4 security, privacy, and ethical computing.", 5);
+        topics.add(securityEthics);
+        seedSkill(subject, securityEthics, "CS.5.F3.1", "Privacy and data integrity", "Form 3 focus area.", 1);
+        seedSkill(subject, securityEthics, "CS.5.F3.2", "System security", "Form 3 focus area.", 2);
+        seedSkill(subject, securityEthics, "CS.5.F3.3", "Cybercrime", "Form 3 focus area.", 3);
+        seedSkill(subject, securityEthics, "CS.5.F4.1", "Data backup", "Form 4 focus area.", 4);
+        seedSkill(subject, securityEthics, "CS.5.F4.2", "Disaster recovery plan", "Form 4 focus area.", 5);
+
+        Topic systemsDesign = seedTopic(subject, "CS.6", "Systems Analysis and Design",
+            "Form 3 and 4 systems lifecycle practices.", 6);
+        topics.add(systemsDesign);
+        seedSkill(subject, systemsDesign, "CS.6.F3.1", "Systems analysis", "Form 3 focus area.", 1);
+        seedSkill(subject, systemsDesign, "CS.6.F3.2", "Systems design", "Form 3 focus area.", 2);
+        seedSkill(subject, systemsDesign, "CS.6.F3.3", "Development and testing", "Form 3 focus area.", 3);
+        seedSkill(subject, systemsDesign, "CS.6.F4.1", "Documentation", "Form 4 focus area.", 4);
+        seedSkill(subject, systemsDesign, "CS.6.F4.2", "User training", "Form 4 focus area.", 5);
+        seedSkill(subject, systemsDesign, "CS.6.F4.3", "Implementation, evaluation and maintenance", "Form 4 focus area.", 6);
+
+        Topic algorithms = seedTopic(subject, "CS.7", "Algorithm Design and Problem Solving",
+            "Form 3 and 4 algorithm development and quality checks.", 7);
+        topics.add(algorithms);
+        seedSkill(subject, algorithms, "CS.7.F3.1", "Algorithm tools", "Form 3 focus area.", 1);
+        seedSkill(subject, algorithms, "CS.7.F3.2", "Interpreting and testing algorithms", "Form 3 focus area.", 2);
+        seedSkill(subject, algorithms, "CS.7.F4.1", "Algorithm design", "Form 4 focus area.", 3);
+
+        Topic programming = seedTopic(subject, "CS.8", "Programming",
+            "Form 3 and 4 programming practices and software quality.", 8);
+        topics.add(programming);
+        seedSkill(subject, programming, "CS.8.F3.1", "Interface design", "Form 3 focus area.", 1);
+        seedSkill(subject, programming, "CS.8.F3.2", "Visual programming", "Form 3 focus area.", 2);
+        seedSkill(subject, programming, "CS.8.F3.3", "Testing and debugging", "Form 3 focus area.", 3);
+        seedSkill(subject, programming, "CS.8.F3.4", "Errors", "Form 3 focus area.", 4);
+        seedSkill(subject, programming, "CS.8.F4.1", "Coding programs", "Form 4 focus area.", 5);
+        seedSkill(subject, programming, "CS.8.F4.2", "Testing and debugging", "Form 4 focus area.", 6);
+
+        Topic databases = seedTopic(subject, "CS.9", "Databases",
+            "Form 3 and 4 database design, querying, and security.", 9);
+        topics.add(databases);
+        seedSkill(subject, databases, "CS.9.F3.1", "Database objects and views", "Form 3 focus area.", 1);
+        seedSkill(subject, databases, "CS.9.F3.2", "External data sources", "Form 3 focus area.", 2);
+        seedSkill(subject, databases, "CS.9.F3.3", "Database security", "Form 3 focus area.", 3);
+        seedSkill(subject, databases, "CS.9.F4.1", "Advanced queries", "Form 4 focus area.", 4);
+        seedSkill(subject, databases, "CS.9.F4.2", "Database connection", "Form 4 focus area.", 5);
+        seedSkill(subject, databases, "CS.9.F4.3", "Database security", "Form 4 focus area.", 6);
+
+        Topic webDesign = seedTopic(subject, "CS.10", "Web Design",
+            "Form 3 and 4 web design, development, and hardening.", 10);
+        topics.add(webDesign);
+        seedSkill(subject, webDesign, "CS.10.F3.1", "CMS", "Form 3 focus area.", 1);
+        seedSkill(subject, webDesign, "CS.10.F3.2", "Graphic design", "Form 3 focus area.", 2);
+        seedSkill(subject, webDesign, "CS.10.F3.3", "Ads", "Form 3 focus area.", 3);
+        seedSkill(subject, webDesign, "CS.10.F3.4", "Web security", "Form 3 focus area.", 4);
+        seedSkill(subject, webDesign, "CS.10.F3.5", "Plugins and extensions", "Form 3 focus area.", 5);
+        seedSkill(subject, webDesign, "CS.10.F4.1", "Web development", "Form 4 focus area.", 6);
+        seedSkill(subject, webDesign, "CS.10.F4.2", "Web security", "Form 4 focus area.", 7);
+        seedSkill(subject, webDesign, "CS.10.F4.3", "Testing and debugging", "Form 4 focus area.", 8);
+
+        Topic technopreneurship = seedTopic(subject, "CS.11", "Technopreneurship",
+            "Form 3 and 4 innovation, policy, and commercialisation topics.", 11);
+        topics.add(technopreneurship);
+        seedSkill(subject, technopreneurship, "CS.11.F3.1", "Laws and policies on technopreneurship", "Form 3 focus area.", 1);
+        seedSkill(subject, technopreneurship, "CS.11.F3.2", "Intellectual property rights", "Form 3 focus area.", 2);
+        seedSkill(subject, technopreneurship, "CS.11.F4.1", "Finance and funding", "Form 4 focus area.", 3);
+        seedSkill(subject, technopreneurship, "CS.11.F4.2", "Market research", "Form 4 focus area.", 4);
+
+        return topics;
     }
 
     private List<Topic> seedMathCurriculum(Subject subject) {
