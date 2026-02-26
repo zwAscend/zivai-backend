@@ -38,6 +38,7 @@ import zw.co.zivai.core_backend.dtos.teachers.TeacherStudentSummaryDto;
 import zw.co.zivai.core_backend.dtos.teachers.TeacherSubjectDto;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
+import zw.co.zivai.core_backend.models.lms.Assessment;
 import zw.co.zivai.core_backend.models.lms.AssessmentAssignment;
 import zw.co.zivai.core_backend.models.lms.AssessmentAttempt;
 import zw.co.zivai.core_backend.models.lms.AssessmentEnrollment;
@@ -250,8 +251,12 @@ public class TeacherService {
         List<TeacherAssessmentOverviewDto> overview = new ArrayList<>();
         for (AssessmentAssignment assignment : safeAssignments) {
             Assessment assessment = assignment.getAssessment();
+            if (assessment == null) {
+                log.warn("Skipping malformed assessment assignment {} in overview for teacher {}", assignment.getId(), teacherId);
+                continue;
+            }
             Subject subject = assessment.getSubject();
-            if (assessment == null || subject == null || subject.getId() == null) {
+            if (subject == null || subject.getId() == null) {
                 log.warn("Skipping malformed assessment assignment {} in overview for teacher {}", assignment.getId(), teacherId);
                 continue;
             }
