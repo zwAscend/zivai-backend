@@ -28,21 +28,26 @@ public interface AssessmentAssignmentRepository extends JpaRepository<Assessment
                 aa.assignedBy.id = :teacherId
                 or (:hasClassIds = true and ce.id in :classIds)
               )
-          and (:subjectId is null or a.subject.id = :subjectId)
-          and (:status is null or lower(a.status) = lower(:status))
-          and (:search is null or lower(a.name) like lower(concat('%', :search, '%')))
-          and (:fromDate is null or aa.dueTime >= :fromDate)
-          and (:toDate is null or aa.dueTime <= :toDate)
+          and (:hasSubjectId = false or a.subject.id = :subjectId)
+          and (:hasStatus = false or lower(a.status) = :status)
+          and (:hasSearch = false or lower(a.name) like concat('%', :search, '%'))
+          and (:hasFromDate = false or aa.dueTime >= :fromDate)
+          and (:hasToDate = false or aa.dueTime <= :toDate)
     """)
     List<AssessmentAssignment> findTeacherAssignments(
         @Param("teacherId") UUID teacherId,
         @Param("classIds") List<UUID> classIds,
         @Param("hasClassIds") boolean hasClassIds,
         @Param("subjectId") UUID subjectId,
+        @Param("hasSubjectId") boolean hasSubjectId,
         @Param("status") String status,
+        @Param("hasStatus") boolean hasStatus,
         @Param("search") String search,
+        @Param("hasSearch") boolean hasSearch,
         @Param("fromDate") java.time.Instant fromDate,
-        @Param("toDate") java.time.Instant toDate
+        @Param("hasFromDate") boolean hasFromDate,
+        @Param("toDate") java.time.Instant toDate,
+        @Param("hasToDate") boolean hasToDate
     );
 
     @EntityGraph(attributePaths = {"assessment", "assessment.subject", "classEntity", "assignedBy"})

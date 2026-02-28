@@ -5,8 +5,11 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
+import zw.co.zivai.core_backend.models.lms.User;
 
 public interface StudentSubjectEnrolmentRepository extends JpaRepository<StudentSubjectEnrolment, UUID> {
     @EntityGraph(attributePaths = {"student", "classSubject", "classSubject.subject"})
@@ -23,4 +26,25 @@ public interface StudentSubjectEnrolmentRepository extends JpaRepository<Student
 
     @EntityGraph(attributePaths = {"student", "classSubject", "classSubject.subject"})
     List<StudentSubjectEnrolment> findByClassSubject_Subject_IdAndDeletedAtIsNull(UUID subjectId);
+
+    @Query("""
+        select distinct s
+        from StudentSubjectEnrolment e
+        join e.student s
+        where e.deletedAt is null
+          and s.deletedAt is null
+          and e.classSubject.id = :classSubjectId
+    """)
+    List<User> findDistinctStudentsByClassSubjectId(@Param("classSubjectId") UUID classSubjectId);
+
+    @Query("""
+        select distinct s
+        from StudentSubjectEnrolment e
+        join e.student s
+        join e.classSubject cs
+        where e.deletedAt is null
+          and s.deletedAt is null
+          and cs.subject.id = :subjectId
+    """)
+    List<User> findDistinctStudentsBySubjectId(@Param("subjectId") UUID subjectId);
 }

@@ -36,6 +36,7 @@ public class CreatePlanRequest {
     public static class PlanStepRequest {
         private String title;
         private String type;
+        private String content;
         private String link;
         private Integer order;
         private List<String> additionalResources;

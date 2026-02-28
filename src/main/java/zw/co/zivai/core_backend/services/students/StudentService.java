@@ -570,19 +570,29 @@ public class StudentService {
     }
 
     private List<StudentDto> listByClassSubject(UUID classSubjectId) {
-        List<StudentSubjectEnrolment> enrolments =
-            studentSubjectEnrolmentRepository.findByClassSubject_IdAndDeletedAtIsNull(classSubjectId);
-        if (enrolments.isEmpty()) {
+        List<User> students = studentSubjectEnrolmentRepository.findDistinctStudentsByClassSubjectId(classSubjectId);
+        if (students.isEmpty()) {
             return List.of();
         }
-        List<User> students = enrolments.stream()
-            .map(StudentSubjectEnrolment::getStudent)
-            .filter(student -> student != null && student.getDeletedAt() == null)
-            .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left, HashMap::new))
-            .values()
-            .stream()
-            .toList();
-        return toStudentDtos(students);
+
+        String resolvedSubjectId = classSubjectRepository.findById(classSubjectId)
+            .map(ClassSubject::getSubject)
+            .filter(Objects::nonNull)
+            .map(Subject::getId)
+            .map(UUID::toString)
+            .orElse(null);
+
+        Map<UUID, Set<String>> subjectIdsByStudent = new HashMap<>();
+        if (resolvedSubjectId != null) {
+            for (User student : students) {
+                subjectIdsByStudent.put(student.getId(), Set.of(resolvedSubjectId));
+            }
+        }
+        return toStudentDtos(
+            students,
+            subjectIdsByStudent,
+            resolvedSubjectId == null ? null : List.of(resolvedSubjectId)
+        );
     }
 
     private List<StudentDto> listByClass(UUID classId) {
@@ -602,17 +612,14 @@ public class StudentService {
     }
 
     private List<StudentDto> listBySubject(UUID subjectId) {
-        List<StudentSubjectEnrolment> enrolments =
-            studentSubjectEnrolmentRepository.findByClassSubject_Subject_IdAndDeletedAtIsNull(subjectId);
-        if (!enrolments.isEmpty()) {
-            List<User> students = enrolments.stream()
-                .map(StudentSubjectEnrolment::getStudent)
-                .filter(student -> student != null && student.getDeletedAt() == null)
-                .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left, HashMap::new))
-                .values()
-                .stream()
-                .toList();
-            return toStudentDtos(students);
+        String subjectIdValue = subjectId.toString();
+        List<User> directStudents = studentSubjectEnrolmentRepository.findDistinctStudentsBySubjectId(subjectId);
+        if (!directStudents.isEmpty()) {
+            Map<UUID, Set<String>> subjectIdsByStudent = new HashMap<>();
+            for (User student : directStudents) {
+                subjectIdsByStudent.put(student.getId(), Set.of(subjectIdValue));
+            }
+            return toStudentDtos(directStudents, subjectIdsByStudent, List.of(subjectIdValue));
         }
 
         List<ClassSubject> classSubjects = classSubjectRepository.findBySubject_IdAndDeletedAtIsNull(subjectId);
@@ -636,10 +643,20 @@ public class StudentService {
             .values()
             .stream()
             .toList();
-        return toStudentDtos(students);
+        Map<UUID, Set<String>> subjectIdsByStudent = new HashMap<>();
+        for (User student : students) {
+            subjectIdsByStudent.put(student.getId(), Set.of(subjectIdValue));
+        }
+        return toStudentDtos(students, subjectIdsByStudent, List.of(subjectIdValue));
     }
 
     private List<StudentDto> toStudentDtos(List<User> students) {
+        return toStudentDtos(students, null, null);
+    }
+
+    private List<StudentDto> toStudentDtos(List<User> students,
+                                           Map<UUID, Set<String>> subjectIdsByStudentOverride,
+                                           List<String> fallbackSubjectsOverride) {
         if (students == null || students.isEmpty()) {
             return List.of();
         }
@@ -659,12 +676,61 @@ public class StudentService {
         Map<UUID, StudentProfile> profilesByStudent = studentProfileRepository.findByUserIdInAndDeletedAtIsNull(studentIds)
             .stream()
             .collect(Collectors.toMap(StudentProfile::getUserId, profile -> profile, (left, right) -> left));
-        Map<UUID, List<StudentAttribute>> attributesByStudent = studentAttributeRepository.findByStudent_IdIn(studentIds)
-            .stream()
-            .collect(Collectors.groupingBy(attribute -> attribute.getStudent().getId()));
+        Map<UUID, Set<String>> subjectIdsByStudent = subjectIdsByStudentOverride != null
+            ? subjectIdsByStudentOverride
+            : resolveSubjectIdsForStudents(studentIds);
+        List<String> fallbackSubjects = fallbackSubjectsOverride != null
+            ? fallbackSubjectsOverride
+            : fallbackSubjects();
 
-        Map<UUID, Set<String>> subjectIdsByStudent = resolveSubjectIdsForStudents(studentIds);
-        List<String> fallbackSubjects = fallbackSubjects();
+        List<UUID> studentsNeedingAttributeFallback = uniqueStudents.stream()
+            .map(User::getId)
+            .filter(studentId -> {
+                StudentProfile profile = profilesByStudent.get(studentId);
+                return profile == null
+                    || profile.getOverall() == null
+                    || profile.getStrength() == null || profile.getStrength().isBlank()
+                    || profile.getPerformance() == null || profile.getPerformance().isBlank()
+                    || profile.getEngagement() == null || profile.getEngagement().isBlank();
+            })
+            .toList();
+
+        Map<UUID, List<StudentAttribute>> attributesByStudent = Map.of();
+        if (!studentsNeedingAttributeFallback.isEmpty()) {
+            Set<UUID> scopedSubjectIds = new LinkedHashSet<>();
+            if (subjectIdsByStudentOverride != null && !subjectIdsByStudentOverride.isEmpty()) {
+                subjectIdsByStudentOverride.values().stream()
+                    .filter(Objects::nonNull)
+                    .flatMap(Set::stream)
+                    .filter(Objects::nonNull)
+                    .forEach(subjectValue -> {
+                        try {
+                            scopedSubjectIds.add(UUID.fromString(subjectValue));
+                        } catch (IllegalArgumentException ignored) {
+                            // ignore malformed values
+                        }
+                    });
+            } else if (fallbackSubjectsOverride != null && !fallbackSubjectsOverride.isEmpty()) {
+                fallbackSubjectsOverride.stream()
+                    .filter(Objects::nonNull)
+                    .forEach(subjectValue -> {
+                        try {
+                            scopedSubjectIds.add(UUID.fromString(subjectValue));
+                        } catch (IllegalArgumentException ignored) {
+                            // ignore malformed values
+                        }
+                    });
+            }
+
+            List<StudentAttribute> attributes = scopedSubjectIds.isEmpty()
+                ? studentAttributeRepository.findByStudent_IdIn(studentsNeedingAttributeFallback)
+                : studentAttributeRepository.findByStudent_IdInAndSkill_Subject_IdIn(
+                    studentsNeedingAttributeFallback,
+                    scopedSubjectIds.stream().toList()
+                );
+            attributesByStudent = attributes.stream()
+                .collect(Collectors.groupingBy(attribute -> attribute.getStudent().getId()));
+        }
 
         List<StudentDto> dtos = new ArrayList<>(uniqueStudents.size());
         for (User user : uniqueStudents) {

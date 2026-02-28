@@ -9,4 +9,5 @@ import zw.co.zivai.core_backend.models.lms.PlanStep;
 
 public interface PlanStepRepository extends JpaRepository<PlanStep, UUID> {
     List<PlanStep> findByPlan_IdOrderByStepOrderAsc(UUID planId);
+    List<PlanStep> findByPlan_IdInOrderByPlan_IdAscStepOrderAsc(List<UUID> planIds);
 }

@@ -11,6 +11,7 @@ import zw.co.zivai.core_backend.models.lms.ClassSubject;
 public interface ClassSubjectRepository extends JpaRepository<ClassSubject, UUID> {
     long countByDeletedAtIsNull();
     List<ClassSubject> findAllByDeletedAtIsNull();
+    @EntityGraph(attributePaths = {"classEntity"})
     List<ClassSubject> findBySubject_IdAndDeletedAtIsNull(UUID subjectId);
     @EntityGraph(attributePaths = {"subject", "classEntity", "teacher"})
     List<ClassSubject> findByTeacher_IdAndDeletedAtIsNull(UUID teacherId);

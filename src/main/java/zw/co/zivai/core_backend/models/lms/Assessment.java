@@ -1,5 +1,7 @@
 package zw.co.zivai.core_backend.models.lms;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.JoinColumn;
@@ -55,10 +57,12 @@ public class Assessment extends BaseEntity {
     @Column(nullable = false)
     private String status = "draft";
 
+    @JsonIgnoreProperties({"roles", "passwordHash"})
     @ManyToOne(optional = false)
     @JoinColumn(name = "created_by")
     private User createdBy;
 
+    @JsonIgnoreProperties({"roles", "passwordHash"})
     @ManyToOne(optional = false)
     @JoinColumn(name = "last_modified_by")
     private User lastModifiedBy;

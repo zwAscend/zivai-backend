@@ -9,4 +9,5 @@ import zw.co.zivai.core_backend.models.lms.PlanSubskill;
 
 public interface PlanSubskillRepository extends JpaRepository<PlanSubskill, UUID> {
     List<PlanSubskill> findByPlanSkill_Id(UUID planSkillId);
+    List<PlanSubskill> findByPlanSkill_IdIn(List<UUID> planSkillIds);
 }
