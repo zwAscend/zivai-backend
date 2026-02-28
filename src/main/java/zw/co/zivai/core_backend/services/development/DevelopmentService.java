@@ -208,6 +208,7 @@ public class DevelopmentService {
                 step.setPlan(savedPlan);
                 step.setTitle(stepRequest.getTitle() == null ? "Step" : stepRequest.getTitle());
                 step.setStepType(normalizePlanStepType(stepRequest.getType()));
+                step.setContent(stepRequest.getContent());
                 step.setLink(stepRequest.getLink());
                 int order = stepRequest.getOrder() != null ? stepRequest.getOrder() : index + 1;
                 step.setStepOrder(order);
@@ -243,19 +244,14 @@ public class DevelopmentService {
     }
 
     public List<DevelopmentPlanDto> getStudentPlans(UUID studentId, String status) {
-        List<StudentPlan> plans = studentPlanRepository.findByStudent_Id(studentId).stream()
-            .filter(plan -> plan.getDeletedAt() == null)
-            .toList();
+        List<StudentPlan> plans = studentPlanRepository.findByStudent_IdAndDeletedAtIsNullOrderByCreatedAtDesc(studentId);
         if (status != null && !status.isBlank()) {
             String normalized = normalizeStatus(status);
             plans = plans.stream()
                 .filter(plan -> normalized.equalsIgnoreCase(normalizeStatus(plan.getStatus())))
                 .toList();
         }
-        return plans.stream()
-            .sorted(Comparator.comparing(StudentPlan::getCreatedAt).reversed())
-            .map(this::toDevelopmentPlanDto)
-            .toList();
+        return toDevelopmentPlanDtos(plans);
     }
 
     public PageResponse<DevelopmentPlanDto> listStudentPlans(UUID subjectId,
@@ -316,9 +312,7 @@ public class DevelopmentService {
                 : studentPlanRepository.findByStatusIgnoreCaseAndDeletedAtIsNull(normalizedStatus, pageable);
         }
 
-        List<DevelopmentPlanDto> items = resultPage.getContent().stream()
-            .map(this::toDevelopmentPlanDto)
-            .toList();
+        List<DevelopmentPlanDto> items = toDevelopmentPlanDtos(resultPage.getContent());
 
         return PageResponse.<DevelopmentPlanDto>builder()
             .items(items)
@@ -330,17 +324,16 @@ public class DevelopmentService {
     }
 
     public DevelopmentPlanDto getStudentPlan(UUID studentId, UUID subjectId) {
-        List<StudentPlan> plans = studentPlanRepository.findByStudent_IdAndSubject_IdOrderByCreatedAtDesc(studentId, subjectId)
-            .stream()
-            .filter(plan -> plan.getDeletedAt() == null)
-            .toList();
+        List<StudentPlan> plans = studentPlanRepository.findByStudent_IdAndSubject_IdAndDeletedAtIsNullOrderByCreatedAtDesc(studentId, subjectId);
         StudentPlan plan = plans.stream()
             .filter(StudentPlan::isCurrent)
             .findFirst()
             .orElseGet(() -> plans.stream()
                 .findFirst()
                 .orElseThrow(() -> new NotFoundException("No plan found for student and subject")));
-        return toDevelopmentPlanDto(plan);
+        return toDevelopmentPlanDtos(List.of(plan)).stream()
+            .findFirst()
+            .orElseThrow(() -> new NotFoundException("No plan found for student and subject"));
     }
 
     public DevelopmentPlanDto assignPlan(UUID studentId, AssignPlanRequest request) {
@@ -378,7 +371,9 @@ public class DevelopmentService {
         studentPlan.setDeletedAt(null);
         StudentPlan saved = studentPlanRepository.save(studentPlan);
         notifyPlanAssigned(saved);
-        return toDevelopmentPlanDto(saved);
+        return toDevelopmentPlanDtos(List.of(saved)).stream()
+            .findFirst()
+            .orElseThrow(() -> new NotFoundException("Student plan not found"));
     }
 
     public DevelopmentPlanDto updatePlanProgress(UUID studentId, UUID planId, UpdatePlanProgressRequest request) {
@@ -388,7 +383,10 @@ public class DevelopmentService {
             throw new NotFoundException("Student plan not found");
         }
         applyProgressUpdate(studentPlan, request);
-        return toDevelopmentPlanDto(studentPlanRepository.save(studentPlan));
+        StudentPlan saved = studentPlanRepository.save(studentPlan);
+        return toDevelopmentPlanDtos(List.of(saved)).stream()
+            .findFirst()
+            .orElseThrow(() -> new NotFoundException("Student plan not found"));
     }
 
     public DevelopmentPlanDto updatePlanProgressByStudentPlanId(UUID studentPlanId, Map<String, Object> request) {
@@ -419,7 +417,10 @@ public class DevelopmentService {
         }
 
         applyProgressUpdate(studentPlan, mapped);
-        return toDevelopmentPlanDto(studentPlanRepository.save(studentPlan));
+        StudentPlan saved = studentPlanRepository.save(studentPlan);
+        return toDevelopmentPlanDtos(List.of(saved)).stream()
+            .findFirst()
+            .orElseThrow(() -> new NotFoundException("Student plan not found: " + studentPlanId));
     }
 
     public DevelopmentPlanDto getStudentPlanById(UUID studentPlanId) {
@@ -428,7 +429,9 @@ public class DevelopmentService {
         if (plan.getDeletedAt() != null) {
             throw new NotFoundException("Student plan not found: " + studentPlanId);
         }
-        return toDevelopmentPlanDto(plan);
+        return toDevelopmentPlanDtos(List.of(plan)).stream()
+            .findFirst()
+            .orElseThrow(() -> new NotFoundException("Student plan not found: " + studentPlanId));
     }
 
     public DevelopmentPlanDto updateStudentPlan(UUID studentPlanId, UpdateStudentPlanRequest request) {
@@ -438,7 +441,9 @@ public class DevelopmentService {
             throw new NotFoundException("Student plan not found: " + studentPlanId);
         }
         if (request == null) {
-            return toDevelopmentPlanDto(studentPlan);
+            return toDevelopmentPlanDtos(List.of(studentPlan)).stream()
+                .findFirst()
+                .orElseThrow(() -> new NotFoundException("Student plan not found: " + studentPlanId));
         }
 
         Plan plan = studentPlan.getPlan();
@@ -457,6 +462,10 @@ public class DevelopmentService {
             studentPlan.setSubject(subject);
         } else if (plan != null && plan.getSubject() != null) {
             studentPlan.setSubject(plan.getSubject());
+        }
+
+        if (plan == null) {
+            throw new BadRequestException("Student plan has no plan template attached");
         }
 
         if (request.getCurrentProgress() != null) {
@@ -488,9 +497,41 @@ public class DevelopmentService {
             studentPlan.setCurrent(makeCurrent);
         }
 
+        if (hasPlanTemplateUpdates(request)) {
+            if (request.getName() != null) {
+                plan.setName(request.getName());
+            }
+            if (request.getDescription() != null) {
+                plan.setDescription(request.getDescription());
+            }
+            if (request.getProgress() != null) {
+                plan.setProgress(clampProgress(request.getProgress()));
+            }
+            if (request.getPotentialOverall() != null) {
+                plan.setPotentialOverall(clampProgress(request.getPotentialOverall()));
+            }
+            if (request.getEta() != null) {
+                plan.setEtaDays(Math.max(0, request.getEta()));
+            }
+            if (request.getPerformance() != null) {
+                plan.setPerformance(request.getPerformance());
+            }
+            planRepository.save(plan);
+        }
+
+        if (request.getSteps() != null) {
+            replacePlanSteps(plan, request.getSteps());
+        }
+
+        if (request.getSkills() != null) {
+            replacePlanSkills(plan, request.getSkills());
+        }
+
         StudentPlan savedPlan = studentPlanRepository.save(studentPlan);
         notifyPlanUpdated(savedPlan, "Plan details were updated.");
-        return toDevelopmentPlanDto(savedPlan);
+        return toDevelopmentPlanDtos(List.of(savedPlan)).stream()
+            .findFirst()
+            .orElseThrow(() -> new NotFoundException("Student plan not found: " + studentPlanId));
     }
 
     public void deleteStudentPlan(UUID studentPlanId) {
@@ -784,13 +825,139 @@ public class DevelopmentService {
             .build();
     }
 
+    private static final class PlanSerializationContext {
+        private final Map<UUID, List<PlanStep>> stepsByPlanId;
+        private final Map<UUID, List<PlanSkill>> skillsByPlanId;
+        private final Map<UUID, List<PlanSubskill>> subskillsByPlanSkillId;
+        private final Map<UUID, Map<String, Skill>> skillsBySubjectAndName;
+        private final Map<String, Map<UUID, StudentAttribute>> attributesByStudentSubjectAndSkillId;
+
+        private PlanSerializationContext(Map<UUID, List<PlanStep>> stepsByPlanId,
+                                         Map<UUID, List<PlanSkill>> skillsByPlanId,
+                                         Map<UUID, List<PlanSubskill>> subskillsByPlanSkillId,
+                                         Map<UUID, Map<String, Skill>> skillsBySubjectAndName,
+                                         Map<String, Map<UUID, StudentAttribute>> attributesByStudentSubjectAndSkillId) {
+            this.stepsByPlanId = stepsByPlanId;
+            this.skillsByPlanId = skillsByPlanId;
+            this.subskillsByPlanSkillId = subskillsByPlanSkillId;
+            this.skillsBySubjectAndName = skillsBySubjectAndName;
+            this.attributesByStudentSubjectAndSkillId = attributesByStudentSubjectAndSkillId;
+        }
+    }
+
+    private List<DevelopmentPlanDto> toDevelopmentPlanDtos(List<StudentPlan> plans) {
+        if (plans == null || plans.isEmpty()) {
+            return List.of();
+        }
+        PlanSerializationContext context = buildPlanSerializationContext(plans);
+        return plans.stream()
+            .map(plan -> toDevelopmentPlanDto(plan, context))
+            .toList();
+    }
+
+    private PlanSerializationContext buildPlanSerializationContext(List<StudentPlan> plans) {
+        List<UUID> planIds = plans.stream()
+            .map(StudentPlan::getPlan)
+            .filter(plan -> plan != null && plan.getId() != null)
+            .map(Plan::getId)
+            .distinct()
+            .toList();
+
+        Map<UUID, List<PlanStep>> stepsByPlanId = planIds.isEmpty()
+            ? Map.of()
+            : planStepRepository.findByPlan_IdInOrderByPlan_IdAscStepOrderAsc(planIds).stream()
+                .filter(step -> step.getPlan() != null && step.getPlan().getId() != null)
+                .collect(Collectors.groupingBy(step -> step.getPlan().getId()));
+
+        List<PlanSkill> planSkills = planIds.isEmpty()
+            ? List.of()
+            : planSkillRepository.findByPlan_IdIn(planIds);
+        Map<UUID, List<PlanSkill>> skillsByPlanId = planSkills.stream()
+            .filter(skill -> skill.getPlan() != null && skill.getPlan().getId() != null)
+            .collect(Collectors.groupingBy(skill -> skill.getPlan().getId()));
+
+        List<UUID> planSkillIds = planSkills.stream()
+            .map(PlanSkill::getId)
+            .filter(id -> id != null)
+            .toList();
+        Map<UUID, List<PlanSubskill>> subskillsByPlanSkillId = planSkillIds.isEmpty()
+            ? Map.of()
+            : planSubskillRepository.findByPlanSkill_IdIn(planSkillIds).stream()
+                .filter(subskill -> subskill.getPlanSkill() != null && subskill.getPlanSkill().getId() != null)
+                .collect(Collectors.groupingBy(subskill -> subskill.getPlanSkill().getId()));
+
+        List<UUID> subjectIds = plans.stream()
+            .map(StudentPlan::getSubject)
+            .filter(subject -> subject != null && subject.getId() != null)
+            .map(Subject::getId)
+            .distinct()
+            .toList();
+        Map<UUID, Map<String, Skill>> skillsBySubjectAndName = subjectIds.isEmpty()
+            ? Map.of()
+            : skillRepository.findBySubject_IdIn(subjectIds).stream()
+                .filter(skill -> skill.getSubject() != null && skill.getSubject().getId() != null)
+                .filter(skill -> skill.getName() != null && !skill.getName().isBlank())
+                .collect(Collectors.groupingBy(
+                    skill -> skill.getSubject().getId(),
+                    Collectors.toMap(
+                        skill -> skill.getName().trim().toLowerCase(Locale.ROOT),
+                        skill -> skill,
+                        (left, right) -> left
+                    )
+                ));
+
+        List<UUID> studentIds = plans.stream()
+            .map(StudentPlan::getStudent)
+            .filter(student -> student != null && student.getId() != null)
+            .map(User::getId)
+            .distinct()
+            .toList();
+        Map<String, Map<UUID, StudentAttribute>> attributesByStudentSubjectAndSkillId =
+            (studentIds.isEmpty() || subjectIds.isEmpty())
+                ? Map.of()
+                : studentAttributeRepository.findByStudent_IdInAndSkill_Subject_IdIn(studentIds, subjectIds).stream()
+                    .filter(attribute -> attribute.getStudent() != null && attribute.getStudent().getId() != null)
+                    .filter(attribute -> attribute.getSkill() != null && attribute.getSkill().getId() != null)
+                    .filter(attribute -> attribute.getSkill().getSubject() != null && attribute.getSkill().getSubject().getId() != null)
+                    .collect(Collectors.groupingBy(
+                        attribute -> studentSubjectKey(attribute.getStudent().getId(), attribute.getSkill().getSubject().getId()),
+                        Collectors.toMap(
+                            attribute -> attribute.getSkill().getId(),
+                            attribute -> attribute,
+                            (left, right) -> left
+                        )
+                    ));
+
+        return new PlanSerializationContext(
+            stepsByPlanId,
+            skillsByPlanId,
+            subskillsByPlanSkillId,
+            skillsBySubjectAndName,
+            attributesByStudentSubjectAndSkillId
+        );
+    }
+
+    private String studentSubjectKey(UUID studentId, UUID subjectId) {
+        return studentId + "|" + subjectId;
+    }
+
     private PlanDto toPlanDto(Plan plan) {
-        List<PlanStep> steps = planStepRepository.findByPlan_IdOrderByStepOrderAsc(plan.getId());
-        List<PlanSkill> skills = planSkillRepository.findByPlan_Id(plan.getId());
+        return toPlanDto(plan, null);
+    }
+
+    private PlanDto toPlanDto(Plan plan, PlanSerializationContext context) {
+        List<PlanStep> steps = context == null
+            ? planStepRepository.findByPlan_IdOrderByStepOrderAsc(plan.getId())
+            : context.stepsByPlanId.getOrDefault(plan.getId(), List.of());
+        List<PlanSkill> skills = context == null
+            ? planSkillRepository.findByPlan_Id(plan.getId())
+            : context.skillsByPlanId.getOrDefault(plan.getId(), List.of());
 
         List<PlanDto.PlanSkillDto> skillDtos = new ArrayList<>();
         for (PlanSkill skill : skills) {
-            List<PlanSubskill> subskills = planSubskillRepository.findByPlanSkill_Id(skill.getId());
+            List<PlanSubskill> subskills = context == null
+                ? planSubskillRepository.findByPlanSkill_Id(skill.getId())
+                : context.subskillsByPlanSkillId.getOrDefault(skill.getId(), List.of());
             List<PlanDto.PlanSubskillDto> subskillDtos = subskills.stream()
                 .map(sub -> PlanDto.PlanSubskillDto.builder()
                     .name(sub.getName())
@@ -806,10 +973,11 @@ public class DevelopmentService {
         }
 
         List<PlanDto.PlanStepDto> stepDtos = steps.stream()
-            .sorted(Comparator.comparing(PlanStep::getStepOrder))
+            .sorted(Comparator.comparing(PlanStep::getStepOrder, Comparator.nullsLast(Comparator.naturalOrder())))
             .map(step -> PlanDto.PlanStepDto.builder()
                 .title(step.getTitle())
                 .type(step.getStepType())
+                .content(step.getContent())
                 .link(step.getLink())
                 .order(step.getStepOrder())
                 .additionalResources(List.of())
@@ -832,25 +1000,33 @@ public class DevelopmentService {
             .build();
     }
 
-    private DevelopmentPlanDto toDevelopmentPlanDto(StudentPlan plan) {
-        PlanDto planDto = toPlanDto(plan.getPlan());
+    private DevelopmentPlanDto toDevelopmentPlanDto(StudentPlan plan, PlanSerializationContext context) {
+        PlanDto planDto = toPlanDto(plan.getPlan(), context);
         List<DevelopmentPlanDto.StudentSkillProgressDto> progress = new ArrayList<>();
         if (plan.getPlan() != null && plan.getSubject() != null && plan.getStudent() != null) {
-            Map<String, Skill> skillsByName = skillRepository.findBySubject_Id(plan.getSubject().getId()).stream()
-                .filter(skill -> skill.getName() != null && !skill.getName().isBlank())
-                .collect(Collectors.toMap(
-                    skill -> skill.getName().trim().toLowerCase(Locale.ROOT),
-                    skill -> skill,
-                    (left, right) -> left
-                ));
-            Map<UUID, StudentAttribute> attributesBySkillId = studentAttributeRepository
-                .findByStudent_IdAndSkill_Subject_Id(plan.getStudent().getId(), plan.getSubject().getId()).stream()
-                .filter(attribute -> attribute.getSkill() != null)
-                .collect(Collectors.toMap(
-                    attribute -> attribute.getSkill().getId(),
-                    attribute -> attribute,
-                    (left, right) -> left
-                ));
+            Map<String, Skill> skillsByName = context == null
+                ? skillRepository.findBySubject_Id(plan.getSubject().getId()).stream()
+                    .filter(skill -> skill.getName() != null && !skill.getName().isBlank())
+                    .collect(Collectors.toMap(
+                        skill -> skill.getName().trim().toLowerCase(Locale.ROOT),
+                        skill -> skill,
+                        (left, right) -> left
+                    ))
+                : context.skillsBySubjectAndName.getOrDefault(plan.getSubject().getId(), Map.of());
+
+            Map<UUID, StudentAttribute> attributesBySkillId = context == null
+                ? studentAttributeRepository
+                    .findByStudent_IdAndSkill_Subject_Id(plan.getStudent().getId(), plan.getSubject().getId()).stream()
+                    .filter(attribute -> attribute.getSkill() != null)
+                    .collect(Collectors.toMap(
+                        attribute -> attribute.getSkill().getId(),
+                        attribute -> attribute,
+                        (left, right) -> left
+                    ))
+                : context.attributesByStudentSubjectAndSkillId.getOrDefault(
+                    studentSubjectKey(plan.getStudent().getId(), plan.getSubject().getId()),
+                    Map.of()
+                );
 
             for (PlanDto.PlanSkillDto skillDto : planDto.getSkills()) {
                 if (skillDto.getName() == null || skillDto.getName().isBlank()) {
@@ -933,6 +1109,102 @@ public class DevelopmentService {
             return Double.parseDouble(value.toString());
         } catch (NumberFormatException ex) {
             return null;
+        }
+    }
+
+    private boolean hasPlanTemplateUpdates(UpdateStudentPlanRequest request) {
+        return request.getName() != null
+            || request.getDescription() != null
+            || request.getProgress() != null
+            || request.getPotentialOverall() != null
+            || request.getEta() != null
+            || request.getPerformance() != null;
+    }
+
+    private void replacePlanSteps(Plan plan, List<UpdateStudentPlanRequest.PlanStepRequest> stepRequests) {
+        List<PlanStep> existingSteps = planStepRepository.findByPlan_IdOrderByStepOrderAsc(plan.getId());
+        if (!existingSteps.isEmpty()) {
+            planStepRepository.deleteAll(existingSteps);
+        }
+
+        List<PlanStep> nextSteps = new ArrayList<>();
+        for (int index = 0; index < stepRequests.size(); index++) {
+            UpdateStudentPlanRequest.PlanStepRequest stepRequest = stepRequests.get(index);
+            if (stepRequest == null) {
+                continue;
+            }
+            PlanStep step = new PlanStep();
+            step.setPlan(plan);
+            step.setTitle(stepRequest.getTitle() == null ? "Step" : stepRequest.getTitle());
+            step.setStepType(normalizePlanStepType(stepRequest.getType()));
+            step.setContent(stepRequest.getContent());
+            step.setLink(stepRequest.getLink());
+            step.setStepOrder(stepRequest.getOrder() != null ? stepRequest.getOrder() : index + 1);
+            nextSteps.add(step);
+        }
+
+        if (!nextSteps.isEmpty()) {
+            planStepRepository.saveAll(nextSteps);
+        }
+    }
+
+    private void replacePlanSkills(Plan plan, List<UpdateStudentPlanRequest.PlanSkillRequest> skillRequests) {
+        List<PlanSkill> existingSkills = planSkillRepository.findByPlan_Id(plan.getId());
+        if (!existingSkills.isEmpty()) {
+            List<UUID> existingSkillIds = existingSkills.stream()
+                .map(PlanSkill::getId)
+                .filter(id -> id != null)
+                .toList();
+            if (!existingSkillIds.isEmpty()) {
+                List<PlanSubskill> existingSubskills = planSubskillRepository.findByPlanSkill_IdIn(existingSkillIds);
+                if (!existingSubskills.isEmpty()) {
+                    planSubskillRepository.deleteAll(existingSubskills);
+                }
+            }
+            planSkillRepository.deleteAll(existingSkills);
+        }
+
+        if (skillRequests.isEmpty()) {
+            return;
+        }
+
+        List<Map.Entry<PlanSkill, UpdateStudentPlanRequest.PlanSkillRequest>> createdSkillPairs = new ArrayList<>();
+        for (UpdateStudentPlanRequest.PlanSkillRequest skillRequest : skillRequests) {
+            if (skillRequest == null) {
+                continue;
+            }
+            PlanSkill planSkill = new PlanSkill();
+            planSkill.setPlan(plan);
+            planSkill.setName(skillRequest.getName() == null ? "Skill" : skillRequest.getName());
+            planSkill.setScore(skillRequest.getScore());
+            PlanSkill savedSkill = planSkillRepository.save(planSkill);
+            createdSkillPairs.add(Map.entry(savedSkill, skillRequest));
+        }
+
+        List<PlanSubskill> createdSubskills = new ArrayList<>();
+        for (Map.Entry<PlanSkill, UpdateStudentPlanRequest.PlanSkillRequest> createdSkillPair : createdSkillPairs) {
+            PlanSkill createdSkill = createdSkillPair.getKey();
+            UpdateStudentPlanRequest.PlanSkillRequest skillRequest = createdSkillPair.getValue();
+            if (skillRequest == null || skillRequest.getSubskills() == null) {
+                continue;
+            }
+            for (UpdateStudentPlanRequest.PlanSubskillRequest subskillRequest : skillRequest.getSubskills()) {
+                if (subskillRequest == null) {
+                    continue;
+                }
+                PlanSubskill subskill = new PlanSubskill();
+                subskill.setPlanSkill(createdSkill);
+                subskill.setName(subskillRequest.getName() == null ? "Subskill" : subskillRequest.getName());
+                subskill.setScore(subskillRequest.getScore());
+                if (subskillRequest.getColor() != null && !subskillRequest.getColor().isBlank()) {
+                    subskill.setColor(subskillRequest.getColor());
+                }
+                createdSubskills.add(subskill);
+            }
+        }
+
+        if (!createdSubskills.isEmpty()) {
+            planSubskillRepository.saveAll(createdSubskills);
         }
     }
 

@@ -24,6 +24,9 @@ public class PlanStep extends BaseEntity {
     @Column(name = "step_type", nullable = false)
     private String stepType;
 
+    @Column(columnDefinition = "text")
+    private String content;
+
     private String link;
 
     @Column(name = "step_order", nullable = false)

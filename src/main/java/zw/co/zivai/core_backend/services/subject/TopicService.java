@@ -60,6 +60,9 @@ public class TopicService {
                 if (topic == null || resource == null || resource.getDeletedAt() != null) {
                     return;
                 }
+                if (!isVisibleToStudents(resource)) {
+                    return;
+                }
                 LinkedHashMap<UUID, TopicResourceDto> topicResources =
                     resourcesByTopicId.computeIfAbsent(topic.getId(), key -> new LinkedHashMap<>());
                 topicResources.putIfAbsent(resource.getId(), toTopicResourceDto(resource, topic.getId()));
@@ -208,5 +211,20 @@ public class TopicService {
             case "document", "image", "video", "other" -> type;
             default -> "other";
         };
+    }
+
+    private boolean isVisibleToStudents(Resource resource) {
+        if (resource == null || resource.getDeletedAt() != null) {
+            return false;
+        }
+        String status = resource.getStatus() == null ? "" : resource.getStatus().trim().toLowerCase(Locale.ROOT);
+        boolean activeStatus = status.isBlank()
+            || "active".equals(status)
+            || "published".equals(status);
+        if (!activeStatus) {
+            return false;
+        }
+        Instant publishAt = resource.getPublishAt();
+        return publishAt == null || !publishAt.isAfter(Instant.now());
     }
 }

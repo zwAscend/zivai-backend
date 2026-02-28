@@ -17,6 +17,9 @@ public interface StudentAttributeRepository extends JpaRepository<StudentAttribu
     List<StudentAttribute> findByStudent_IdIn(List<UUID> studentIds);
 
     @EntityGraph(attributePaths = {"skill"})
+    List<StudentAttribute> findByStudent_IdInAndSkill_Subject_IdIn(List<UUID> studentIds, List<UUID> subjectIds);
+
+    @EntityGraph(attributePaths = {"skill"})
     List<StudentAttribute> findByStudent_IdAndSkill_Subject_Id(UUID studentId, UUID subjectId);
 
     @EntityGraph(attributePaths = {"skill"})

@@ -10,6 +10,7 @@ import zw.co.zivai.core_backend.models.lms.Skill;
 
 public interface SkillRepository extends JpaRepository<Skill, UUID> {
     List<Skill> findBySubject_Id(UUID subjectId);
+    List<Skill> findBySubject_IdIn(List<UUID> subjectIds);
     Optional<Skill> findBySubject_IdAndCode(UUID subjectId, String code);
     Optional<Skill> findBySubject_IdAndNameIgnoreCase(UUID subjectId, String name);
 }

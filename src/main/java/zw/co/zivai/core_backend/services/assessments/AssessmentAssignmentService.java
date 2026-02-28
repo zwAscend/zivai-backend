@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
@@ -165,25 +167,49 @@ public class AssessmentAssignmentService {
         }
         String statusCode = request.getStatusCode() != null ? request.getStatusCode() : "assigned";
 
-        List<AssessmentEnrollment> enrollments = new ArrayList<>();
-        List<AssessmentEnrollment> createdEnrollments = new ArrayList<>();
-
-        for (UUID studentId : studentIds) {
-            AssessmentEnrollment enrollment = assessmentEnrollmentRepository
-                .findByAssessmentAssignment_IdAndStudent_Id(assignmentId, studentId)
-                .orElseGet(() -> {
-                    User student = userRepository.findById(studentId)
-                        .orElseThrow(() -> new NotFoundException("Student not found: " + studentId));
-                    AssessmentEnrollment created = new AssessmentEnrollment();
-                    created.setAssessmentAssignment(assignment);
-                    created.setStudent(student);
-                    created.setStatusCode(statusCode);
-                    AssessmentEnrollment saved = assessmentEnrollmentRepository.save(created);
-                    createdEnrollments.add(saved);
-                    return saved;
-                });
-            enrollments.add(enrollment);
+        List<UUID> uniqueStudentIds = studentIds.stream()
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+        if (uniqueStudentIds.isEmpty()) {
+            throw new BadRequestException("studentIds are required");
         }
+
+        Map<UUID, AssessmentEnrollment> existingByStudentId = assessmentEnrollmentRepository
+            .findByAssessmentAssignment_IdAndStudent_IdIn(assignmentId, uniqueStudentIds)
+            .stream()
+            .filter(enrollment -> enrollment.getStudent() != null && enrollment.getStudent().getId() != null)
+            .collect(Collectors.toMap(
+                enrollment -> enrollment.getStudent().getId(),
+                Function.identity(),
+                (left, right) -> left
+            ));
+
+        List<User> students = userRepository.findByIdInAndDeletedAtIsNull(uniqueStudentIds);
+        Map<UUID, User> studentById = students.stream()
+            .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        List<AssessmentEnrollment> newEnrollments = new ArrayList<>();
+        for (UUID studentId : uniqueStudentIds) {
+            if (existingByStudentId.containsKey(studentId)) {
+                continue;
+            }
+            User student = studentById.get(studentId);
+            if (student == null) {
+                throw new NotFoundException("Student not found: " + studentId);
+            }
+            AssessmentEnrollment enrollment = new AssessmentEnrollment();
+            enrollment.setAssessmentAssignment(assignment);
+            enrollment.setStudent(student);
+            enrollment.setStatusCode(statusCode);
+            newEnrollments.add(enrollment);
+        }
+
+        List<AssessmentEnrollment> createdEnrollments = newEnrollments.isEmpty()
+            ? List.of()
+            : assessmentEnrollmentRepository.saveAll(newEnrollments);
+        List<AssessmentEnrollment> enrollments = new ArrayList<>(existingByStudentId.values());
+        enrollments.addAll(createdEnrollments);
 
         notifyAssessmentAssigned(assignment, createdEnrollments);
         return enrollments;
@@ -206,23 +232,43 @@ public class AssessmentAssignmentService {
             return List.of();
         }
 
-        List<AssessmentEnrollment> enrolled = new ArrayList<>();
-        List<AssessmentEnrollment> createdEnrollments = new ArrayList<>();
+        List<UUID> studentIds = enrolments.stream()
+            .map(Enrolment::getStudent)
+            .filter(Objects::nonNull)
+            .map(User::getId)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
 
-        for (Enrolment enrolment : enrolments) {
-            AssessmentEnrollment enrollment = assessmentEnrollmentRepository
-                .findByAssessmentAssignment_IdAndStudent_Id(assignmentId, enrolment.getStudent().getId())
-                .orElseGet(() -> {
-                    AssessmentEnrollment created = new AssessmentEnrollment();
-                    created.setAssessmentAssignment(assignment);
-                    created.setStudent(enrolment.getStudent());
-                    created.setStatusCode(status);
-                    AssessmentEnrollment saved = assessmentEnrollmentRepository.save(created);
-                    createdEnrollments.add(saved);
-                    return saved;
-                });
-            enrolled.add(enrollment);
-        }
+        Map<UUID, AssessmentEnrollment> existingByStudentId = assessmentEnrollmentRepository
+            .findByAssessmentAssignment_IdAndStudent_IdIn(assignmentId, studentIds)
+            .stream()
+            .filter(enrollment -> enrollment.getStudent() != null && enrollment.getStudent().getId() != null)
+            .collect(Collectors.toMap(
+                enrollment -> enrollment.getStudent().getId(),
+                Function.identity(),
+                (left, right) -> left
+            ));
+
+        List<AssessmentEnrollment> newEnrollments = enrolments.stream()
+            .map(Enrolment::getStudent)
+            .filter(Objects::nonNull)
+            .filter(student -> student.getId() != null)
+            .filter(student -> !existingByStudentId.containsKey(student.getId()))
+            .map(student -> {
+                AssessmentEnrollment created = new AssessmentEnrollment();
+                created.setAssessmentAssignment(assignment);
+                created.setStudent(student);
+                created.setStatusCode(status);
+                return created;
+            })
+            .toList();
+
+        List<AssessmentEnrollment> createdEnrollments = newEnrollments.isEmpty()
+            ? List.of()
+            : assessmentEnrollmentRepository.saveAll(newEnrollments);
+        List<AssessmentEnrollment> enrolled = new ArrayList<>(existingByStudentId.values());
+        enrolled.addAll(createdEnrollments);
 
         notifyAssessmentAssigned(assignment, createdEnrollments);
         return enrolled;

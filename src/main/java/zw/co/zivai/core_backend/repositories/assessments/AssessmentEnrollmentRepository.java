@@ -16,6 +16,7 @@ public interface AssessmentEnrollmentRepository extends JpaRepository<Assessment
     Optional<AssessmentEnrollment> findByAssessmentAssignment_IdAndStudent_Id(UUID assessmentAssignmentId, UUID studentId);
     List<AssessmentEnrollment> findByStudent_Id(UUID studentId);
     List<AssessmentEnrollment> findByAssessmentAssignment_Id(UUID assessmentAssignmentId);
+    List<AssessmentEnrollment> findByAssessmentAssignment_IdAndStudent_IdIn(UUID assessmentAssignmentId, Collection<UUID> studentIds);
     List<AssessmentEnrollment> findByAssessmentAssignment_IdInAndStudent_IdAndDeletedAtIsNull(Collection<UUID> assessmentAssignmentIds,
                                                                                                UUID studentId);
     List<AssessmentEnrollment> findByAssessmentAssignment_ClassEntity_Id(UUID classId);
@@ -30,6 +31,7 @@ public interface AssessmentEnrollmentRepository extends JpaRepository<Assessment
         where ae.student.id = :studentId
           and ae.deletedAt is null
           and aa.deletedAt is null
+          and aa.published = true
           and a.deletedAt is null
           and s.deletedAt is null
           and (:subjectId is null or s.id = :subjectId)
@@ -52,6 +54,7 @@ public interface AssessmentEnrollmentRepository extends JpaRepository<Assessment
           and a.id = :assessmentId
           and ae.deletedAt is null
           and aa.deletedAt is null
+          and aa.published = true
           and a.deletedAt is null
           and s.deletedAt is null
     """)

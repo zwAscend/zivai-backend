@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -56,6 +57,7 @@ import zw.co.zivai.core_backend.repositories.assessments.GradingOverrideReposito
 import zw.co.zivai.core_backend.repositories.assessments.MarkingSchemeItemRepository;
 import zw.co.zivai.core_backend.repositories.assessments.QuestionRepository;
 import zw.co.zivai.core_backend.repositories.user.UserRepository;
+import zw.co.zivai.core_backend.services.notification.NotificationService;
 
 @Service
 @RequiredArgsConstructor
@@ -74,6 +76,7 @@ public class SubmissionService {
     private final GradingOverrideRepository gradingOverrideRepository;
     private final MarkingSchemeItemRepository markingSchemeItemRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
 
     public SubmissionDetailDto submitAnswers(SubmitAssessmentAnswersRequest request) {
@@ -218,6 +221,7 @@ public class SubmissionService {
             result.setStatus("draft");
         }
         assessmentResultRepository.save(result);
+        notifyTeacherOfSubmission(assignment, student, savedAttempt);
 
         return toDetailDto(savedAttempt);
     }
@@ -337,6 +341,8 @@ public class SubmissionService {
                 assessmentResultRepository.save(result);
             });
         }
+
+        notifyTeacherOfSubmission(assignment, student, savedAttempt);
 
         return toDetailDto(savedAttempt);
     }
@@ -522,6 +528,50 @@ public class SubmissionService {
         enrollment.setStudent(student);
         enrollment.setStatusCode("assigned");
         return assessmentEnrollmentRepository.save(enrollment);
+    }
+
+    private void notifyTeacherOfSubmission(AssessmentAssignment assignment, User student, AssessmentAttempt attempt) {
+        if (assignment == null
+            || assignment.getAssignedBy() == null
+            || assignment.getAssignedBy().getId() == null
+            || assignment.getAssessment() == null
+            || assignment.getAssessment().getSchool() == null
+            || assignment.getAssessment().getSchool().getId() == null
+            || student == null
+            || student.getId() == null
+            || attempt == null
+            || attempt.getId() == null) {
+            return;
+        }
+
+        String studentName = Stream.of(student.getFirstName(), student.getLastName())
+            .filter(value -> value != null && !value.isBlank())
+            .collect(Collectors.joining(" "))
+            .trim();
+        if (studentName.isBlank()) {
+            studentName = student.getEmail() != null && !student.getEmail().isBlank()
+                ? student.getEmail()
+                : "A student";
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("event", "assessment_submitted");
+        data.put("assignmentId", assignment.getId().toString());
+        data.put("assessmentId", assignment.getAssessment().getId().toString());
+        data.put("assessmentName", assignment.getAssessment().getName());
+        data.put("submissionId", attempt.getId().toString());
+        data.put("studentId", student.getId().toString());
+        data.put("studentName", studentName);
+
+        notificationService.createBulk(
+            assignment.getAssessment().getSchool().getId(),
+            List.of(assignment.getAssignedBy().getId()),
+            "assessment_submitted",
+            "New assessment submission",
+            studentName + " submitted " + assignment.getAssessment().getName() + ".",
+            data,
+            "high"
+        );
     }
 
     private int nextAttemptNumber(UUID enrollmentId) {

@@ -11,13 +11,15 @@ import zw.co.zivai.core_backend.models.lms.Resource;
 
 public interface ResourceRepository extends JpaRepository<Resource, UUID> {
     @EntityGraph(attributePaths = {"subject", "uploadedBy"})
-    List<Resource> findBySubject_Id(UUID subjectId);
+    List<Resource> findBySubject_IdAndDeletedAtIsNull(UUID subjectId);
     @EntityGraph(attributePaths = {"subject", "uploadedBy"})
-    List<Resource> findBySubject_IdAndStatus(UUID subjectId, String status);
+    List<Resource> findBySubject_IdAndStatusAndDeletedAtIsNull(UUID subjectId, String status);
     @EntityGraph(attributePaths = {"subject", "uploadedBy"})
-    List<Resource> findByStatus(String status);
+    List<Resource> findByStatusAndDeletedAtIsNull(String status);
     @EntityGraph(attributePaths = {"subject", "uploadedBy"})
     List<Resource> findAllByOrderByCreatedAtDesc(Pageable pageable);
     @EntityGraph(attributePaths = {"subject", "uploadedBy"})
     List<Resource> findByDeletedAtIsNull();
+    @EntityGraph(attributePaths = {"subject", "uploadedBy"})
+    java.util.Optional<Resource> findByIdAndDeletedAtIsNull(UUID id);
 }

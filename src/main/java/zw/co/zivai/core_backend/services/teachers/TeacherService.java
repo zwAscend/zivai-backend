@@ -69,7 +69,9 @@ import zw.co.zivai.core_backend.repositories.user.UserRepository;
 @Transactional(readOnly = true)
 @Slf4j
 public class TeacherService {
-    private static final UUID EMPTY_UUID = new UUID(0L, 0L);
+    private static final UUID EMPTY_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000");
+    private static final Instant MIN_FILTER_INSTANT = Instant.EPOCH;
+    private static final Instant MAX_FILTER_INSTANT = Instant.parse("9999-12-31T23:59:59Z");
 
     private final UserRepository userRepository;
     private final ClassSubjectRepository classSubjectRepository;
@@ -199,17 +201,26 @@ public class TeacherService {
 
         boolean filterMarked = status != null && status.equalsIgnoreCase("marked");
         String statusFilter = filterMarked ? null : normalizeNullable(status);
+        if (statusFilter != null) {
+            statusFilter = statusFilter.toLowerCase(Locale.ROOT);
+        }
+        String searchFilter = normalizeSearch(search);
 
         TeacherScope scope = resolveScope(teacherId, subjectId, null);
         List<AssessmentAssignment> assignments = assessmentAssignmentRepository.findTeacherAssignments(
             teacherId,
             scope.classIdsOrSentinel(),
             !scope.classIds().isEmpty(),
-            subjectId,
-            statusFilter,
-            normalizeSearch(search),
-            fromDate,
-            toDate
+            subjectId != null ? subjectId : EMPTY_UUID,
+            subjectId != null,
+            statusFilter != null ? statusFilter : "",
+            statusFilter != null,
+            searchFilter != null ? searchFilter : "",
+            searchFilter != null,
+            fromDate != null ? fromDate : MIN_FILTER_INSTANT,
+            fromDate != null,
+            toDate != null ? toDate : MAX_FILTER_INSTANT,
+            toDate != null
         );
         if (assignments.isEmpty()) {
             return List.of();

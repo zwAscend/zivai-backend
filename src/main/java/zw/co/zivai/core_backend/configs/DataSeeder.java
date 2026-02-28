@@ -161,6 +161,7 @@ public class DataSeeder {
             return;
         }
         ensureAuthSchema();
+        ensurePlanStepSchema();
         seedExamBoards();
         seedEnrolmentStatuses();
         seedAssessmentEnrollmentStatuses();
@@ -176,10 +177,23 @@ public class DataSeeder {
 
         seedUser("teacher@zivai.local", "263712000001", "teacher1", "Tariro", "Moyo", List.of(teacher));
         seedUser("student@zivai.local", "263712000002", "student1", "Tinashe", "Dube", List.of(student));
+        seedUser("student2@zivai.local", "263712000004", "student2", "Rudo", "Mhlanga", List.of(student));
+        seedUser("student3@zivai.local", "263712000005", "student3", "Farai", "Ncube", List.of(student));
+        seedUser("student4@zivai.local", "263712000006", "student4", "Chipo", "Sibanda", List.of(student));
+        seedUser("student5@zivai.local", "263712000007", "student5", "Tafadzwa", "Maregere", List.of(student));
+        seedUser("student6@zivai.local", "263712000008", "student6", "Ashley", "Nyoni", List.of(student));
         seedUser("admin@zivai.local", "263712000003", "admin1", "Admin", "User", List.of(admin));
 
         User teacherUser = userRepository.findByEmail("teacher@zivai.local").orElse(null);
         User studentUser = userRepository.findByEmail("student@zivai.local").orElse(null);
+        List<User> seededStudents = List.of(
+            studentUser,
+            userRepository.findByEmail("student2@zivai.local").orElse(null),
+            userRepository.findByEmail("student3@zivai.local").orElse(null),
+            userRepository.findByEmail("student4@zivai.local").orElse(null),
+            userRepository.findByEmail("student5@zivai.local").orElse(null),
+            userRepository.findByEmail("student6@zivai.local").orElse(null)
+        ).stream().filter(java.util.Objects::nonNull).toList();
 
         School school = schoolRepository.findByCode("ZVHS")
             .orElseGet(() -> {
@@ -217,27 +231,27 @@ public class DataSeeder {
                     return classRepository.save(created);
                 });
 
-            if (studentUser != null && enrolmentRepository
-                .findByClassEntity_IdAndStudent_Id(classEntity.getId(), studentUser.getId())
-                .isEmpty()) {
-                Enrolment enrolment = new Enrolment();
-                enrolment.setClassEntity(classEntity);
-                enrolment.setStudent(studentUser);
-                enrolment.setEnrolmentStatusCode("active");
-                    enrolmentRepository.save(enrolment);
+            for (User seededStudent : seededStudents) {
+                seedClassEnrolment(seededStudent, classEntity);
             }
 
             if (csSubject != null) {
                 csLink = seedClassSubject(school, classEntity, csSubject, teacherUser, "2026", "Term 1");
-                seedStudentSubjectEnrolment(studentUser, csLink);
+                for (User seededStudent : seededStudents) {
+                    seedStudentSubjectEnrolment(seededStudent, csLink);
+                }
             }
             if (mathSubject != null) {
                 mathLink = seedClassSubject(school, classEntity, mathSubject, teacherUser, "2026", "Term 1");
-                seedStudentSubjectEnrolment(studentUser, mathLink);
+                for (User seededStudent : seededStudents) {
+                    seedStudentSubjectEnrolment(seededStudent, mathLink);
+                }
             }
             if (engSubject != null) {
                 engLink = seedClassSubject(school, classEntity, engSubject, teacherUser, "2026", "Term 1");
-                seedStudentSubjectEnrolment(studentUser, engLink);
+                for (User seededStudent : seededStudents) {
+                    seedStudentSubjectEnrolment(seededStudent, engLink);
+                }
             }
         }
 
@@ -389,6 +403,11 @@ public class DataSeeder {
     private void ensureAuthSchema() {
         jdbcTemplate.update(
             "ALTER TABLE IF EXISTS lms.users ADD COLUMN IF NOT EXISTS password_hash varchar(255)");
+    }
+
+    private void ensurePlanStepSchema() {
+        jdbcTemplate.update(
+            "ALTER TABLE IF EXISTS lms.plan_steps ADD COLUMN IF NOT EXISTS content text");
     }
 
     private void seedSubject(String code, String name, String description) {
@@ -934,6 +953,20 @@ public class DataSeeder {
         enrolment.setClassSubject(classSubject);
         enrolment.setStatusCode("active");
         studentSubjectEnrolmentRepository.save(enrolment);
+    }
+
+    private void seedClassEnrolment(User student, ClassEntity classEntity) {
+        if (student == null || classEntity == null) {
+            return;
+        }
+        if (enrolmentRepository.findByClassEntity_IdAndStudent_Id(classEntity.getId(), student.getId()).isPresent()) {
+            return;
+        }
+        Enrolment enrolment = new Enrolment();
+        enrolment.setClassEntity(classEntity);
+        enrolment.setStudent(student);
+        enrolment.setEnrolmentStatusCode("active");
+        enrolmentRepository.save(enrolment);
     }
 
     private void seedStudentAttribute(User student, Skill skill, double current, double potential) {

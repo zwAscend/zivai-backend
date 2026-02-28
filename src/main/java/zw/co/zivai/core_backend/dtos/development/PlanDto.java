@@ -43,6 +43,7 @@ public class PlanDto {
     public static class PlanStepDto {
         String title;
         String type;
+        String content;
         String link;
         Integer order;
         List<String> additionalResources;

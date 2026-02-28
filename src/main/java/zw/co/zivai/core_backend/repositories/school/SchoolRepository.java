@@ -11,6 +11,7 @@ import zw.co.zivai.core_backend.models.lms.School;
 public interface SchoolRepository extends JpaRepository<School, UUID> {
     Optional<School> findByCode(String code);
     List<School> findAllByDeletedAtIsNull();
+    Optional<School> findFirstByDeletedAtIsNullOrderByCreatedAtAsc();
     Optional<School> findByIdAndDeletedAtIsNull(UUID id);
     long countByDeletedAtIsNull();
 }

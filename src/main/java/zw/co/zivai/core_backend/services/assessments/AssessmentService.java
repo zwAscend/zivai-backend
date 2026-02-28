@@ -1,6 +1,7 @@
 package zw.co.zivai.core_backend.services.assessments;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -182,28 +183,7 @@ public class AssessmentService {
         User author = assessment.getLastModifiedBy() != null ? assessment.getLastModifiedBy() : assessment.getCreatedBy();
 
         int order = maxSequence + 1;
-        for (var questionRequest : questions) {
-            Question question = new Question();
-            question.setSubject(subject);
-            question.setAuthor(author);
-            question.setStem(questionRequest.getStem());
-            question.setQuestionTypeCode(questionRequest.getQuestionTypeCode());
-            question.setMaxMark(questionRequest.getMaxMark() != null ? questionRequest.getMaxMark() : 1.0);
-            if (questionRequest.getDifficulty() != null) {
-                question.setDifficulty(questionRequest.getDifficulty().shortValue());
-            }
-            question.setRubricJson(questionRequest.getRubricJson());
-            Question savedQuestion = questionRepository.save(question);
-
-            AssessmentQuestion assessmentQuestion = new AssessmentQuestion();
-            assessmentQuestion.setAssessment(assessment);
-            assessmentQuestion.setQuestion(savedQuestion);
-            int sequenceIndex = questionRequest.getSequenceIndex() != null ? questionRequest.getSequenceIndex() : order;
-            assessmentQuestion.setSequenceIndex(sequenceIndex);
-            assessmentQuestion.setPoints(questionRequest.getPoints() != null ? questionRequest.getPoints() : savedQuestion.getMaxMark());
-            assessmentQuestionRepository.save(assessmentQuestion);
-            order++;
-        }
+        attachQuestions(assessment, subject, author, questions, order);
 
         return getWithQuestions(assessmentId);
     }
@@ -230,19 +210,19 @@ public class AssessmentService {
 
     public List<Assessment> list(UUID subjectId, String status) {
         if (subjectId != null && status != null && !status.isBlank()) {
-            return assessmentRepository.findBySubject_IdAndStatus(subjectId, status);
+            return assessmentRepository.findBySubject_IdAndStatusAndDeletedAtIsNull(subjectId, status);
         }
         if (subjectId != null) {
-            return assessmentRepository.findBySubject_Id(subjectId);
+            return assessmentRepository.findBySubject_IdAndDeletedAtIsNull(subjectId);
         }
         if (status != null && !status.isBlank()) {
-            return assessmentRepository.findByStatus(status);
+            return assessmentRepository.findByStatusAndDeletedAtIsNull(status);
         }
-        return assessmentRepository.findAll();
+        return assessmentRepository.findByDeletedAtIsNull();
     }
 
     public Assessment get(UUID id) {
-        return assessmentRepository.findById(id)
+        return assessmentRepository.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("Assessment not found: " + id));
     }
 
@@ -290,51 +270,73 @@ public class AssessmentService {
     }
 
     private void attachQuestions(Assessment assessment, Subject subject, User author, List<CreateAssessmentQuestionRequest> questions) {
+        attachQuestions(assessment, subject, author, questions, 1);
+    }
+
+    private void attachQuestions(Assessment assessment,
+                                 Subject subject,
+                                 User author,
+                                 List<CreateAssessmentQuestionRequest> questions,
+                                 int startingOrder) {
         if (questions == null || questions.isEmpty()) {
             return;
         }
-        int order = 1;
+        List<Question> questionsToPersist = new ArrayList<>();
         for (var questionRequest : questions) {
-            if (questionRequest.getStem() == null || questionRequest.getStem().isBlank()) {
-                throw new BadRequestException("Question stem is required");
-            }
-            if (questionRequest.getQuestionTypeCode() == null || questionRequest.getQuestionTypeCode().isBlank()) {
-                throw new BadRequestException("Question type is required");
-            }
-            Question question = new Question();
-            question.setSubject(subject);
-            question.setAuthor(author);
-            question.setStem(questionRequest.getStem());
-            question.setQuestionTypeCode(questionRequest.getQuestionTypeCode());
-            question.setMaxMark(questionRequest.getMaxMark() != null ? questionRequest.getMaxMark() : 1.0);
-            if (questionRequest.getDifficulty() != null) {
-                question.setDifficulty(questionRequest.getDifficulty().shortValue());
-            }
-            question.setRubricJson(questionRequest.getRubricJson());
-            Question savedQuestion = questionRepository.save(question);
+            validateQuestionRequest(questionRequest);
+            questionsToPersist.add(buildQuestion(subject, author, questionRequest));
+        }
 
+        List<Question> savedQuestions = questionRepository.saveAll(questionsToPersist);
+        List<AssessmentQuestion> links = new ArrayList<>(savedQuestions.size());
+        int order = startingOrder;
+        for (int index = 0; index < questions.size(); index += 1) {
+            CreateAssessmentQuestionRequest questionRequest = questions.get(index);
+            Question savedQuestion = savedQuestions.get(index);
             AssessmentQuestion assessmentQuestion = new AssessmentQuestion();
             assessmentQuestion.setAssessment(assessment);
             assessmentQuestion.setQuestion(savedQuestion);
             int sequenceIndex = questionRequest.getSequenceIndex() != null ? questionRequest.getSequenceIndex() : order;
             assessmentQuestion.setSequenceIndex(sequenceIndex);
             assessmentQuestion.setPoints(questionRequest.getPoints() != null ? questionRequest.getPoints() : savedQuestion.getMaxMark());
-            assessmentQuestionRepository.save(assessmentQuestion);
+            links.add(assessmentQuestion);
             order++;
+        }
+        assessmentQuestionRepository.saveAll(links);
+    }
+
+    private Question buildQuestion(Subject subject, User author, CreateAssessmentQuestionRequest questionRequest) {
+        Question question = new Question();
+        question.setSubject(subject);
+        question.setAuthor(author);
+        question.setStem(questionRequest.getStem());
+        question.setQuestionTypeCode(questionRequest.getQuestionTypeCode());
+        question.setMaxMark(questionRequest.getMaxMark() != null ? questionRequest.getMaxMark() : 1.0);
+        if (questionRequest.getDifficulty() != null) {
+            question.setDifficulty(questionRequest.getDifficulty().shortValue());
+        }
+        question.setRubricJson(questionRequest.getRubricJson());
+        return question;
+    }
+
+    private void validateQuestionRequest(CreateAssessmentQuestionRequest questionRequest) {
+        if (questionRequest.getStem() == null || questionRequest.getStem().isBlank()) {
+            throw new BadRequestException("Question stem is required");
+        }
+        if (questionRequest.getQuestionTypeCode() == null || questionRequest.getQuestionTypeCode().isBlank()) {
+            throw new BadRequestException("Question type is required");
         }
     }
 
     private School resolveSchool() {
         return schoolRepository.findByCode("ZVHS")
-            .orElseGet(() -> schoolRepository.findAll().stream()
-                .findFirst()
+            .orElseGet(() -> schoolRepository.findFirstByDeletedAtIsNullOrderByCreatedAtAsc()
                 .orElseThrow(() -> new NotFoundException("No school found")));
     }
 
     private User resolveUser() {
-        return userRepository.findByEmail("teacher@zivai.local")
-            .orElseGet(() -> userRepository.findAll().stream()
-                .findFirst()
+        return userRepository.findByEmailAndDeletedAtIsNull("teacher@zivai.local")
+            .orElseGet(() -> userRepository.findFirstByDeletedAtIsNullOrderByCreatedAtAsc()
                 .orElseThrow(() -> new NotFoundException("No user found")));
     }
 }
