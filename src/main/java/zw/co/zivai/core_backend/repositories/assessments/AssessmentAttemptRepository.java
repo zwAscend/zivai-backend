@@ -8,11 +8,11 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
-import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.repository.query.Param;
 
-import zw.co.zivai.core_backend.models.lms.AssessmentAttempt;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAttempt;
 
 public interface AssessmentAttemptRepository extends JpaRepository<AssessmentAttempt, UUID> {
     List<AssessmentAttempt> findByAssessmentEnrollment_Student_Id(UUID studentId);
@@ -147,4 +147,23 @@ public interface AssessmentAttemptRepository extends JpaRepository<AssessmentAtt
         @Param("hasClassIds") boolean hasClassIds,
         @Param("subjectId") UUID subjectId
     );
+
+    @Query("""
+        select
+            count(at),
+            sum(case when lower(coalesce(at.gradingStatusCode, '')) = 'auto_graded' then 1 else 0 end),
+            sum(case when lower(coalesce(at.gradingStatusCode, '')) = 'reviewed' then 1 else 0 end),
+            avg(at.totalScore),
+            avg(at.aiConfidence)
+        from AssessmentAttempt at
+        join at.assessmentEnrollment ae
+        join ae.assessmentAssignment aa
+        join aa.assessment a
+        where at.deletedAt is null
+          and ae.deletedAt is null
+          and aa.deletedAt is null
+          and a.deletedAt is null
+          and (:subjectId is null or a.subject.id = :subjectId)
+    """)
+    Object[] fetchGradingStats(@Param("subjectId") UUID subjectId);
 }

@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.users.CreateUserRequest;
 import zw.co.zivai.core_backend.dtos.users.UpdateUserRequest;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.services.user.UserService;
 
 @RestController

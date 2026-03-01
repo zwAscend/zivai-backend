@@ -5,7 +5,7 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.PlanSubskill;
+import zw.co.zivai.core_backend.models.lms.development.PlanSubskill;
 
 public interface PlanSubskillRepository extends JpaRepository<PlanSubskill, UUID> {
     List<PlanSubskill> findByPlanSkill_Id(UUID planSkillId);

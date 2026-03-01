@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.AssessmentQuestion;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentQuestion;
 
 public interface AssessmentQuestionRepository extends JpaRepository<AssessmentQuestion, UUID> {
     Optional<AssessmentQuestion> findFirstByAssessment_IdOrderBySequenceIndexAsc(UUID assessmentId);

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -27,6 +28,7 @@ import zw.co.zivai.core_backend.dtos.resources.CreateResourceRequest;
 import zw.co.zivai.core_backend.dtos.resources.ResourceCountsDto;
 import zw.co.zivai.core_backend.dtos.resources.ResourceDto;
 import zw.co.zivai.core_backend.dtos.resources.ResourceRecentDto;
+import zw.co.zivai.core_backend.dtos.resources.ResourceTopicIdsRequest;
 import zw.co.zivai.core_backend.dtos.resources.UpdateResourceRequest;
 import zw.co.zivai.core_backend.services.resource.ResourceService;
 
@@ -38,7 +40,7 @@ public class ResourceController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public zw.co.zivai.core_backend.models.lms.Resource create(@RequestBody CreateResourceRequest request) {
+    public zw.co.zivai.core_backend.models.lms.resources.Resource create(@RequestBody CreateResourceRequest request) {
         return resourceService.create(request);
     }
 
@@ -83,6 +85,22 @@ public class ResourceController {
     @PutMapping("/{id}")
     public ResourceDto update(@PathVariable UUID id, @RequestBody UpdateResourceRequest request) {
         return resourceService.update(id, request);
+    }
+
+    @DeleteMapping("/{id}")
+    public Map<String, String> delete(@PathVariable UUID id) {
+        resourceService.delete(id);
+        return Map.of("message", "Resource archived");
+    }
+
+    @PostMapping("/{id}/topics")
+    public ResourceDto addTopics(@PathVariable UUID id, @RequestBody ResourceTopicIdsRequest request) {
+        return resourceService.addTopics(id, request != null ? request.getTopicIds() : List.of());
+    }
+
+    @DeleteMapping("/{id}/topics/{topicId}")
+    public ResourceDto removeTopic(@PathVariable UUID id, @PathVariable UUID topicId) {
+        return resourceService.removeTopic(id, topicId);
     }
 
     @GetMapping("/content/{id}")

@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.Enrolment;
+import zw.co.zivai.core_backend.models.lms.students.Enrolment;
 
 public interface EnrolmentRepository extends JpaRepository<Enrolment, UUID> {
     @EntityGraph(attributePaths = {"student", "classEntity", "classEntity.homeroomTeacher"})

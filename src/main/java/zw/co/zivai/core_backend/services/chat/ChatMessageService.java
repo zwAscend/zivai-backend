@@ -11,14 +11,14 @@ import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.chat.ChatMessageDto;
 import zw.co.zivai.core_backend.dtos.chat.UnreadChatCountDto;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.Chat;
-import zw.co.zivai.core_backend.models.lms.ChatMember;
-import zw.co.zivai.core_backend.models.lms.ClassEntity;
-import zw.co.zivai.core_backend.models.lms.ClassSubject;
-import zw.co.zivai.core_backend.models.lms.Enrolment;
-import zw.co.zivai.core_backend.models.lms.Message;
-import zw.co.zivai.core_backend.models.lms.School;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.chat.Chat;
+import zw.co.zivai.core_backend.models.lms.chat.ChatMember;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassSubject;
+import zw.co.zivai.core_backend.models.lms.students.Enrolment;
+import zw.co.zivai.core_backend.models.lms.chat.Message;
+import zw.co.zivai.core_backend.models.lms.school.School;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.repositories.chat.ChatMemberRepository;
 import zw.co.zivai.core_backend.repositories.chat.ChatRepository;
 import zw.co.zivai.core_backend.repositories.classroom.ClassSubjectRepository;
@@ -166,8 +166,7 @@ public class ChatMessageService {
                 return classEntity.getSchool();
             }
         }
-        return schoolRepository.findAll().stream()
-            .findFirst()
+        return schoolRepository.findFirstByDeletedAtIsNullOrderByCreatedAtAsc()
             .orElseThrow(() -> new NotFoundException("No school found"));
     }
 

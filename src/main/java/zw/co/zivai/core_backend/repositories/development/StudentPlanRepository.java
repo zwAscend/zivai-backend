@@ -9,13 +9,17 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.StudentPlan;
+import zw.co.zivai.core_backend.models.lms.students.StudentPlan;
 
 public interface StudentPlanRepository extends JpaRepository<StudentPlan, UUID> {
     @EntityGraph(attributePaths = {"student", "subject", "plan"})
     List<StudentPlan> findByStudent_Id(UUID studentId);
     @EntityGraph(attributePaths = {"student", "subject", "plan"})
     List<StudentPlan> findByStudent_IdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID studentId);
+    @EntityGraph(attributePaths = {"student", "subject", "plan"})
+    List<StudentPlan> findByStudent_IdAndCurrentTrueAndDeletedAtIsNullOrderByCreatedAtDesc(UUID studentId);
+    @EntityGraph(attributePaths = {"student", "subject", "plan"})
+    List<StudentPlan> findByStudent_IdAndSubject_IdAndCurrentTrueAndDeletedAtIsNullOrderByCreatedAtDesc(UUID studentId, UUID subjectId);
     @EntityGraph(attributePaths = {"student", "subject", "plan"})
     List<StudentPlan> findByStudent_IdAndSubject_Id(UUID studentId, UUID subjectId);
     @EntityGraph(attributePaths = {"student", "subject", "plan"})

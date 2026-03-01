@@ -6,7 +6,7 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.Skill;
+import zw.co.zivai.core_backend.models.lms.development.Skill;
 
 public interface SkillRepository extends JpaRepository<Skill, UUID> {
     List<Skill> findBySubject_Id(UUID subjectId);

@@ -2,7 +2,6 @@ package zw.co.zivai.core_backend.services.assessments;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,19 +31,19 @@ import zw.co.zivai.core_backend.dtos.assessments.SubmissionSummaryDto;
 import zw.co.zivai.core_backend.dtos.assessments.SubmitAssessmentAnswersRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.AnswerAttachment;
-import zw.co.zivai.core_backend.models.lms.Assessment;
-import zw.co.zivai.core_backend.models.lms.AssessmentAssignment;
-import zw.co.zivai.core_backend.models.lms.AssessmentAttempt;
-import zw.co.zivai.core_backend.models.lms.AssessmentEnrollment;
-import zw.co.zivai.core_backend.models.lms.AssessmentQuestion;
-import zw.co.zivai.core_backend.models.lms.AssessmentResult;
-import zw.co.zivai.core_backend.models.lms.AttemptAnswer;
-import zw.co.zivai.core_backend.models.lms.GradingOverride;
-import zw.co.zivai.core_backend.models.lms.MarkingScheme;
-import zw.co.zivai.core_backend.models.lms.MarkingSchemeItem;
-import zw.co.zivai.core_backend.models.lms.Question;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.assessments.AnswerAttachment;
+import zw.co.zivai.core_backend.models.lms.assessments.Assessment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAssignment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAttempt;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentEnrollment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentQuestion;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentResult;
+import zw.co.zivai.core_backend.models.lms.assessments.AttemptAnswer;
+import zw.co.zivai.core_backend.models.lms.assessments.GradingOverride;
+import zw.co.zivai.core_backend.models.lms.resources.MarkingScheme;
+import zw.co.zivai.core_backend.models.lms.resources.MarkingSchemeItem;
+import zw.co.zivai.core_backend.models.lms.resources.Question;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.repositories.assessments.AnswerAttachmentRepository;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentAssignmentRepository;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentAttemptRepository;
@@ -440,31 +439,12 @@ public class SubmissionService {
     }
 
     public GradingStatsDto getStats(UUID subjectId) {
-        List<AssessmentAttempt> attempts = assessmentAttemptRepository.findAll();
-        if (subjectId != null) {
-            attempts = attempts.stream()
-                .filter(attempt -> {
-                    AssessmentAssignment assignment = attempt.getAssessmentEnrollment().getAssessmentAssignment();
-                    return assignment.getAssessment().getSubject().getId().equals(subjectId);
-                })
-                .toList();
-        }
-
-        long total = attempts.size();
-        long autoGraded = attempts.stream().filter(a -> "auto_graded".equalsIgnoreCase(a.getGradingStatusCode())).count();
-        long reviewed = attempts.stream().filter(a -> "reviewed".equalsIgnoreCase(a.getGradingStatusCode())).count();
-
-        double avgScore = attempts.stream()
-            .filter(a -> a.getTotalScore() != null)
-            .mapToDouble(AssessmentAttempt::getTotalScore)
-            .average()
-            .orElse(0.0);
-
-        double avgConfidence = attempts.stream()
-            .filter(a -> a.getAiConfidence() != null)
-            .mapToDouble(AssessmentAttempt::getAiConfidence)
-            .average()
-            .orElse(0.0);
+        Object[] stats = assessmentAttemptRepository.fetchGradingStats(subjectId);
+        long total = asLong(stats, 0);
+        long autoGraded = asLong(stats, 1);
+        long reviewed = asLong(stats, 2);
+        double avgScore = asDouble(stats, 3);
+        double avgConfidence = asDouble(stats, 4);
 
         return GradingStatsDto.builder()
             .totalSubmissions(total)
@@ -473,6 +453,20 @@ public class SubmissionService {
             .averageScore(avgScore)
             .averageConfidence(avgConfidence)
             .build();
+    }
+
+    private long asLong(Object[] stats, int index) {
+        if (stats == null || index >= stats.length || !(stats[index] instanceof Number number)) {
+            return 0L;
+        }
+        return number.longValue();
+    }
+
+    private double asDouble(Object[] stats, int index) {
+        if (stats == null || index >= stats.length || !(stats[index] instanceof Number number)) {
+            return 0.0;
+        }
+        return number.doubleValue();
     }
 
     public SubmissionDetailDto reviewSubmission(UUID submissionId, ReviewSubmissionRequest request) {

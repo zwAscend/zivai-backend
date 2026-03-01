@@ -15,7 +15,7 @@ import zw.co.zivai.core_backend.dtos.users.PhoneNumber;
 import zw.co.zivai.core_backend.dtos.users.UpdateUserRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.models.lookups.Role;
 import zw.co.zivai.core_backend.repositories.user.RoleRepository;
 import zw.co.zivai.core_backend.repositories.user.UserRepository;

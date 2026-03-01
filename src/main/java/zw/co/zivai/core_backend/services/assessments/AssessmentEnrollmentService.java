@@ -10,9 +10,9 @@ import zw.co.zivai.core_backend.dtos.assessments.AssessmentEnrollmentSummaryDto;
 import zw.co.zivai.core_backend.dtos.assessments.CreateAssessmentEnrollmentRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.AssessmentEnrollment;
-import zw.co.zivai.core_backend.models.lms.AssessmentAssignment;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentEnrollment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAssignment;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentEnrollmentRepository;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentAssignmentRepository;
 import zw.co.zivai.core_backend.repositories.user.UserRepository;
@@ -31,9 +31,9 @@ public class AssessmentEnrollmentService {
         if (request.getStudentId() == null) {
             throw new BadRequestException("studentId is required");
         }
-        AssessmentAssignment assignment = assessmentAssignmentRepository.findById(request.getAssessmentAssignmentId())
+        AssessmentAssignment assignment = assessmentAssignmentRepository.findByIdAndDeletedAtIsNull(request.getAssessmentAssignmentId())
             .orElseThrow(() -> new NotFoundException("Assessment assignment not found: " + request.getAssessmentAssignmentId()));
-        User student = userRepository.findById(request.getStudentId())
+        User student = userRepository.findByIdAndDeletedAtIsNull(request.getStudentId())
             .orElseThrow(() -> new NotFoundException("Student not found: " + request.getStudentId()));
 
         AssessmentEnrollment enrollment = new AssessmentEnrollment();
@@ -49,7 +49,7 @@ public class AssessmentEnrollmentService {
     }
 
     public List<AssessmentEnrollment> list() {
-        return assessmentEnrollmentRepository.findAll();
+        return assessmentEnrollmentRepository.findByDeletedAtIsNull();
     }
 
     public List<AssessmentEnrollmentSummaryDto> listSummary(UUID assignmentId, UUID studentId, UUID classId) {
@@ -60,13 +60,13 @@ public class AssessmentEnrollmentService {
                 .map(List::of)
                 .orElseGet(List::of);
         } else if (assignmentId != null) {
-            enrollments = assessmentEnrollmentRepository.findByAssessmentAssignment_Id(assignmentId);
+            enrollments = assessmentEnrollmentRepository.findByAssessmentAssignment_IdAndDeletedAtIsNull(assignmentId);
         } else if (studentId != null) {
-            enrollments = assessmentEnrollmentRepository.findByStudent_Id(studentId);
+            enrollments = assessmentEnrollmentRepository.findByStudent_IdAndDeletedAtIsNull(studentId);
         } else if (classId != null) {
-            enrollments = assessmentEnrollmentRepository.findByAssessmentAssignment_ClassEntity_Id(classId);
+            enrollments = assessmentEnrollmentRepository.findByAssessmentAssignment_ClassEntity_IdAndDeletedAtIsNull(classId);
         } else {
-            enrollments = assessmentEnrollmentRepository.findAll();
+            enrollments = assessmentEnrollmentRepository.findByDeletedAtIsNull();
         }
 
         return enrollments.stream()
@@ -75,7 +75,7 @@ public class AssessmentEnrollmentService {
     }
 
     public AssessmentEnrollment get(UUID id) {
-        return assessmentEnrollmentRepository.findById(id)
+        return assessmentEnrollmentRepository.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("Assessment enrollment not found: " + id));
     }
 

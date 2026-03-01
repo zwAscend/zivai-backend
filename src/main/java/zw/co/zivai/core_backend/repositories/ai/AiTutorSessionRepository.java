@@ -5,7 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import zw.co.zivai.core_backend.models.lms.AiTutorSession;
+import zw.co.zivai.core_backend.models.lms.ai.AiTutorSession;
 
 public interface AiTutorSessionRepository extends JpaRepository<AiTutorSession, UUID> {
     Optional<AiTutorSession> findByIdAndDeletedAtIsNull(UUID id);

@@ -10,7 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import zw.co.zivai.core_backend.models.lms.AssessmentResult;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentResult;
 
 public interface AssessmentResultRepository extends JpaRepository<AssessmentResult, UUID> {
     List<AssessmentResult> findByAssessmentAssignment_Id(UUID assessmentAssignmentId);

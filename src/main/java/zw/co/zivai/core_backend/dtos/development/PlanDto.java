@@ -41,6 +41,7 @@ public class PlanDto {
     @Value
     @Builder
     public static class PlanStepDto {
+        String id;
         String title;
         String type;
         String content;

@@ -28,8 +28,11 @@ import zw.co.zivai.core_backend.dtos.development.MasterySignalsSummaryDto;
 import zw.co.zivai.core_backend.dtos.development.StudentStreakDto;
 import zw.co.zivai.core_backend.dtos.common.PageResponse;
 import zw.co.zivai.core_backend.dtos.development.PlanDto;
+import zw.co.zivai.core_backend.dtos.development.ReorderStudentPlanStepsRequest;
+import zw.co.zivai.core_backend.dtos.development.StudentPlanStepRequest;
 import zw.co.zivai.core_backend.dtos.development.StudentAttributeUpdateRequest;
 import zw.co.zivai.core_backend.dtos.development.UpdatePlanProgressRequest;
+import zw.co.zivai.core_backend.dtos.development.UpdatePlanRequest;
 import zw.co.zivai.core_backend.dtos.development.UpdateStudentPlanRequest;
 import zw.co.zivai.core_backend.services.development.DevelopmentService;
 
@@ -71,6 +74,17 @@ public class DevelopmentController {
     @ResponseStatus(HttpStatus.CREATED)
     public PlanDto createSubjectPlan(@RequestBody CreatePlanRequest request) {
         return developmentService.createSubjectPlan(request);
+    }
+
+    @PutMapping("/plans/subject/{planId}")
+    public PlanDto updateSubjectPlan(@PathVariable UUID planId, @RequestBody UpdatePlanRequest request) {
+        return developmentService.updateSubjectPlan(planId, request);
+    }
+
+    @DeleteMapping("/plans/subject/{planId}")
+    public Map<String, Object> deleteSubjectPlan(@PathVariable UUID planId) {
+        developmentService.deleteSubjectPlan(planId);
+        return Map.of("message", "Plan deleted");
     }
 
     @GetMapping("/plans/student/{studentId}")
@@ -122,6 +136,42 @@ public class DevelopmentController {
     public DevelopmentPlanDto updateStudentPlan(@PathVariable UUID studentPlanId,
                                                 @RequestBody UpdateStudentPlanRequest request) {
         return developmentService.updateStudentPlan(studentPlanId, request);
+    }
+
+    @PostMapping("/plans/student-plan/{studentPlanId}/steps")
+    @ResponseStatus(HttpStatus.CREATED)
+    public DevelopmentPlanDto addStudentPlanStep(@PathVariable UUID studentPlanId,
+                                                 @RequestBody StudentPlanStepRequest request) {
+        return developmentService.addStudentPlanStep(studentPlanId, request);
+    }
+
+    @PutMapping("/plans/student-plan/{studentPlanId}/steps/{stepId}")
+    public DevelopmentPlanDto updateStudentPlanStep(@PathVariable UUID studentPlanId,
+                                                    @PathVariable UUID stepId,
+                                                    @RequestBody StudentPlanStepRequest request) {
+        return developmentService.updateStudentPlanStep(studentPlanId, stepId, request);
+    }
+
+    @DeleteMapping("/plans/student-plan/{studentPlanId}/steps/{stepId}")
+    public DevelopmentPlanDto deleteStudentPlanStep(@PathVariable UUID studentPlanId,
+                                                    @PathVariable UUID stepId) {
+        return developmentService.deleteStudentPlanStep(studentPlanId, stepId);
+    }
+
+    @PutMapping("/plans/student-plan/{studentPlanId}/steps/reorder")
+    public DevelopmentPlanDto reorderStudentPlanSteps(@PathVariable UUID studentPlanId,
+                                                      @RequestBody ReorderStudentPlanStepsRequest request) {
+        return developmentService.reorderStudentPlanSteps(studentPlanId, request);
+    }
+
+    @PostMapping("/plans/student-plan/{studentPlanId}/publish")
+    public DevelopmentPlanDto publishStudentPlan(@PathVariable UUID studentPlanId) {
+        return developmentService.publishStudentPlan(studentPlanId);
+    }
+
+    @PostMapping("/plans/student-plan/{studentPlanId}/unpublish")
+    public DevelopmentPlanDto unpublishStudentPlan(@PathVariable UUID studentPlanId) {
+        return developmentService.unpublishStudentPlan(studentPlanId);
     }
 
     @DeleteMapping("/plans/student-plan/{studentPlanId}")

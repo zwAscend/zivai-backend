@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import zw.co.zivai.core_backend.models.lms.TermForecast;
+import zw.co.zivai.core_backend.models.lms.termforecast.TermForecast;
 
 public interface TermForecastRepository extends JpaRepository<TermForecast, UUID> {
     @Query("""

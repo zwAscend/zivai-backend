@@ -21,7 +21,7 @@ import zw.co.zivai.core_backend.dtos.assessments.AssessmentWithQuestionsDto;
 import zw.co.zivai.core_backend.dtos.assessments.CreateAssessmentRequest;
 import zw.co.zivai.core_backend.dtos.assessments.CreateAssessmentQuestionRequest;
 import zw.co.zivai.core_backend.dtos.assessments.UpdateAssessmentRequest;
-import zw.co.zivai.core_backend.models.lms.Assessment;
+import zw.co.zivai.core_backend.models.lms.assessments.Assessment;
 import zw.co.zivai.core_backend.services.assessments.AssessmentService;
 
 @RestController

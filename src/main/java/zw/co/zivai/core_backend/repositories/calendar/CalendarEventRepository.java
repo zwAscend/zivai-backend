@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
 
-import zw.co.zivai.core_backend.models.lms.CalendarEvent;
+import zw.co.zivai.core_backend.models.lms.calendar.CalendarEvent;
 
 public interface CalendarEventRepository extends JpaRepository<CalendarEvent, UUID> {
     @EntityGraph(attributePaths = {"subject", "classEntity", "createdBy"})

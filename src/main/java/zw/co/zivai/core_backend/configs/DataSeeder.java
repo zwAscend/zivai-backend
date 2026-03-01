@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import jakarta.annotation.PreDestroy;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,29 +20,29 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import lombok.RequiredArgsConstructor;
-import zw.co.zivai.core_backend.models.lms.ClassEntity;
-import zw.co.zivai.core_backend.models.lms.CalendarEvent;
-import zw.co.zivai.core_backend.models.lms.ClassSubject;
-import zw.co.zivai.core_backend.models.lms.Enrolment;
-import zw.co.zivai.core_backend.models.lms.Assessment;
-import zw.co.zivai.core_backend.models.lms.AssessmentAssignment;
-import zw.co.zivai.core_backend.models.lms.AssessmentResult;
-import zw.co.zivai.core_backend.models.lms.Chat;
-import zw.co.zivai.core_backend.models.lms.ChatMember;
-import zw.co.zivai.core_backend.models.lms.Message;
-import zw.co.zivai.core_backend.models.lms.Plan;
-import zw.co.zivai.core_backend.models.lms.PlanSkill;
-import zw.co.zivai.core_backend.models.lms.PlanStep;
-import zw.co.zivai.core_backend.models.lms.PlanSubskill;
-import zw.co.zivai.core_backend.models.lms.School;
-import zw.co.zivai.core_backend.models.lms.Skill;
-import zw.co.zivai.core_backend.models.lms.StudentAttribute;
-import zw.co.zivai.core_backend.models.lms.StudentPlan;
-import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
-import zw.co.zivai.core_backend.models.lms.Subject;
-import zw.co.zivai.core_backend.models.lms.TermForecast;
-import zw.co.zivai.core_backend.models.lms.Topic;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.calendar.CalendarEvent;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassSubject;
+import zw.co.zivai.core_backend.models.lms.students.Enrolment;
+import zw.co.zivai.core_backend.models.lms.assessments.Assessment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAssignment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentResult;
+import zw.co.zivai.core_backend.models.lms.chat.Chat;
+import zw.co.zivai.core_backend.models.lms.chat.ChatMember;
+import zw.co.zivai.core_backend.models.lms.chat.Message;
+import zw.co.zivai.core_backend.models.lms.development.Plan;
+import zw.co.zivai.core_backend.models.lms.development.PlanSkill;
+import zw.co.zivai.core_backend.models.lms.development.PlanStep;
+import zw.co.zivai.core_backend.models.lms.development.PlanSubskill;
+import zw.co.zivai.core_backend.models.lms.school.School;
+import zw.co.zivai.core_backend.models.lms.development.Skill;
+import zw.co.zivai.core_backend.models.lms.students.StudentAttribute;
+import zw.co.zivai.core_backend.models.lms.students.StudentPlan;
+import zw.co.zivai.core_backend.models.lms.students.StudentSubjectEnrolment;
+import zw.co.zivai.core_backend.models.lms.subjects.Subject;
+import zw.co.zivai.core_backend.models.lms.termforecast.TermForecast;
+import zw.co.zivai.core_backend.models.lms.resources.Topic;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.models.lookups.Role;
 import zw.co.zivai.core_backend.repositories.classroom.ClassRepository;
 import zw.co.zivai.core_backend.repositories.classroom.ClassSubjectRepository;
@@ -112,6 +113,7 @@ public class DataSeeder {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true", matchIfMissing = true)
     CommandLineRunner seedUsers() {
         return args -> runSeedingWithRetry();
     }
@@ -254,6 +256,8 @@ public class DataSeeder {
                 }
             }
         }
+
+        seedDefaultStudentPlansForExistingSubjectEnrolments();
 
         if (csSubject != null) {
             List<Topic> csCurriculum = seedComputerScienceCurriculum(csSubject);
@@ -953,6 +957,65 @@ public class DataSeeder {
         enrolment.setClassSubject(classSubject);
         enrolment.setStatusCode("active");
         studentSubjectEnrolmentRepository.save(enrolment);
+    }
+
+    private void seedDefaultStudentPlansForExistingSubjectEnrolments() {
+        for (StudentSubjectEnrolment enrolment : studentSubjectEnrolmentRepository.findByDeletedAtIsNull()) {
+            if (enrolment.getStudent() == null || enrolment.getClassSubject() == null || enrolment.getClassSubject().getSubject() == null) {
+                continue;
+            }
+
+            User student = enrolment.getStudent();
+            Subject subject = enrolment.getClassSubject().getSubject();
+            if (!studentPlanRepository.findByStudent_IdAndSubject_IdAndDeletedAtIsNullOrderByCreatedAtDesc(student.getId(), subject.getId()).isEmpty()) {
+                continue;
+            }
+
+            Plan plan = new Plan();
+            plan.setSubject(subject);
+            plan.setName(buildStarterPlanName(student, subject));
+            plan.setDescription("Starter development plan for " + buildStudentName(student) + " in " + buildSubjectName(subject) + ".");
+            plan.setProgress(0.0);
+            plan.setPotentialOverall(70.0);
+            plan.setEtaDays(14);
+            plan.setPerformance("Tracking");
+            Plan savedPlan = planRepository.save(plan);
+
+            StudentPlan studentPlan = new StudentPlan();
+            studentPlan.setStudent(student);
+            studentPlan.setPlan(savedPlan);
+            studentPlan.setSubject(subject);
+            studentPlan.setCurrentProgress(0.0);
+            studentPlan.setStatus("on_hold");
+            studentPlan.setCurrent(false);
+            studentPlanRepository.save(studentPlan);
+        }
+    }
+
+    private String buildStarterPlanName(User student, Subject subject) {
+        return buildStudentName(student) + " " + buildSubjectName(subject) + " Development Plan";
+    }
+
+    private String buildStudentName(User student) {
+        String fullName = ((student.getFirstName() == null ? "" : student.getFirstName().trim()) + " "
+            + (student.getLastName() == null ? "" : student.getLastName().trim())).trim();
+        if (!fullName.isBlank()) {
+            return fullName;
+        }
+        if (student.getUsername() != null && !student.getUsername().isBlank()) {
+            return student.getUsername().trim();
+        }
+        return "Student";
+    }
+
+    private String buildSubjectName(Subject subject) {
+        if (subject.getName() != null && !subject.getName().isBlank()) {
+            return subject.getName().trim();
+        }
+        if (subject.getCode() != null && !subject.getCode().isBlank()) {
+            return subject.getCode().trim();
+        }
+        return "Subject";
     }
 
     private void seedClassEnrolment(User student, ClassEntity classEntity) {

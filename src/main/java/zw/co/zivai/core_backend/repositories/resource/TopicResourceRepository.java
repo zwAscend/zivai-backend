@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
 
-import zw.co.zivai.core_backend.models.lms.TopicResource;
+import zw.co.zivai.core_backend.models.lms.resources.TopicResource;
 
 public interface TopicResourceRepository extends JpaRepository<TopicResource, UUID> {
     @EntityGraph(attributePaths = {"topic", "resource", "resource.subject", "resource.uploadedBy"})
@@ -21,4 +21,5 @@ public interface TopicResourceRepository extends JpaRepository<TopicResource, UU
     @EntityGraph(attributePaths = {"topic"})
     List<TopicResource> findByResource_Id(UUID resourceId);
     Optional<TopicResource> findByResource_IdAndTopic_Id(UUID resourceId, UUID topicId);
+    Optional<TopicResource> findByResource_IdAndTopic_IdAndDeletedAtIsNull(UUID resourceId, UUID topicId);
 }

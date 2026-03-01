@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 
-import zw.co.zivai.core_backend.models.lms.Resource;
+import zw.co.zivai.core_backend.models.lms.resources.Resource;
 
 public interface ResourceRepository extends JpaRepository<Resource, UUID> {
     @EntityGraph(attributePaths = {"subject", "uploadedBy"})

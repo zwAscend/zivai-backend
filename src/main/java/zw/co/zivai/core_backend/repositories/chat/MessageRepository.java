@@ -5,7 +5,7 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.Message;
+import zw.co.zivai.core_backend.models.lms.chat.Message;
 
 public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<Message> findByChatIdOrderByTsAsc(UUID chatId);

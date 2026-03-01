@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.schools.CreateSchoolRequest;
-import zw.co.zivai.core_backend.models.lms.School;
+import zw.co.zivai.core_backend.models.lms.school.School;
 import zw.co.zivai.core_backend.services.school.SchoolService;
 
 @RestController

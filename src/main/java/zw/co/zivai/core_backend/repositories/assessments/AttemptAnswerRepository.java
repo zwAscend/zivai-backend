@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import zw.co.zivai.core_backend.models.lms.AttemptAnswer;
+import zw.co.zivai.core_backend.models.lms.assessments.AttemptAnswer;
 import zw.co.zivai.core_backend.dtos.assessments.TopicAnswerStat;
 import zw.co.zivai.core_backend.dtos.assessments.SubjectTopicAnswerStat;
 

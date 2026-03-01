@@ -19,12 +19,12 @@ import zw.co.zivai.core_backend.dtos.assessments.CreateAssessmentAssignmentReque
 import zw.co.zivai.core_backend.dtos.assessments.UpdateAssessmentAssignmentRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.Assessment;
-import zw.co.zivai.core_backend.models.lms.AssessmentAssignment;
-import zw.co.zivai.core_backend.models.lms.AssessmentEnrollment;
-import zw.co.zivai.core_backend.models.lms.ClassEntity;
-import zw.co.zivai.core_backend.models.lms.Enrolment;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.assessments.Assessment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAssignment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentEnrollment;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.students.Enrolment;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentAssignmentRepository;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentEnrollmentRepository;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentRepository;
@@ -52,14 +52,14 @@ public class AssessmentAssignmentService {
         if (request.getAssignedBy() == null) {
             throw new BadRequestException("assignedBy is required");
         }
-        Assessment assessment = assessmentRepository.findById(request.getAssessmentId())
+        Assessment assessment = assessmentRepository.findByIdAndDeletedAtIsNull(request.getAssessmentId())
             .orElseThrow(() -> new NotFoundException("Assessment not found: " + request.getAssessmentId()));
-        User assignedBy = userRepository.findById(request.getAssignedBy())
+        User assignedBy = userRepository.findByIdAndDeletedAtIsNull(request.getAssignedBy())
             .orElseThrow(() -> new NotFoundException("User not found: " + request.getAssignedBy()));
 
         ClassEntity classEntity = null;
         if (request.getClassId() != null) {
-            classEntity = classRepository.findById(request.getClassId())
+            classEntity = classRepository.findByIdAndDeletedAtIsNull(request.getClassId())
                 .orElseThrow(() -> new NotFoundException("Class not found: " + request.getClassId()));
         }
 
@@ -85,23 +85,23 @@ public class AssessmentAssignmentService {
     }
 
     public List<AssessmentAssignment> list() {
-        return assessmentAssignmentRepository.findAll();
+        return assessmentAssignmentRepository.findByDeletedAtIsNull();
     }
 
     public List<AssessmentAssignment> listByAssessment(UUID assessmentId) {
-        return assessmentAssignmentRepository.findByAssessment_Id(assessmentId);
+        return assessmentAssignmentRepository.findByAssessment_IdAndDeletedAtIsNull(assessmentId);
     }
 
     public List<AssessmentAssignment> listByClass(UUID classId) {
-        return assessmentAssignmentRepository.findByClassEntity_Id(classId);
+        return assessmentAssignmentRepository.findByClassEntity_IdAndDeletedAtIsNull(classId);
     }
 
     public List<AssessmentAssignment> listByPublished(boolean published) {
-        return assessmentAssignmentRepository.findByPublished(published);
+        return assessmentAssignmentRepository.findByPublishedAndDeletedAtIsNull(published);
     }
 
     public AssessmentAssignment get(UUID id) {
-        return assessmentAssignmentRepository.findById(id)
+        return assessmentAssignmentRepository.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("Assessment assignment not found: " + id));
     }
 
@@ -111,12 +111,12 @@ public class AssessmentAssignmentService {
         boolean wasPublished = assignment.isPublished();
 
         if (request.getClassId() != null) {
-            ClassEntity classEntity = classRepository.findById(request.getClassId())
+            ClassEntity classEntity = classRepository.findByIdAndDeletedAtIsNull(request.getClassId())
                 .orElseThrow(() -> new NotFoundException("Class not found: " + request.getClassId()));
             assignment.setClassEntity(classEntity);
         }
         if (request.getAssignedBy() != null) {
-            User assignedBy = userRepository.findById(request.getAssignedBy())
+            User assignedBy = userRepository.findByIdAndDeletedAtIsNull(request.getAssignedBy())
                 .orElseThrow(() -> new NotFoundException("User not found: " + request.getAssignedBy()));
             assignment.setAssignedBy(assignedBy);
         }
@@ -218,7 +218,7 @@ public class AssessmentAssignmentService {
     public List<AssessmentEnrollment> enrollClass(UUID assignmentId, UUID classId, String statusCode) {
         AssessmentAssignment assignment = get(assignmentId);
         ClassEntity classEntity = classId != null
-            ? classRepository.findById(classId)
+            ? classRepository.findByIdAndDeletedAtIsNull(classId)
                 .orElseThrow(() -> new NotFoundException("Class not found: " + classId))
             : assignment.getClassEntity();
 

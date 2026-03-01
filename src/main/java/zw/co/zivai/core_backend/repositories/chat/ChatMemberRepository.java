@@ -5,8 +5,8 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.ChatMember;
-import zw.co.zivai.core_backend.models.lms.ChatMember.ChatMemberId;
+import zw.co.zivai.core_backend.models.lms.chat.ChatMember;
+import zw.co.zivai.core_backend.models.lms.chat.ChatMember.ChatMemberId;
 
 public interface ChatMemberRepository extends JpaRepository<ChatMember, ChatMemberId> {
     List<ChatMember> findByUser_Id(UUID userId);

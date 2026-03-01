@@ -8,10 +8,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.students.StudentSubjectEnrolment;
+import zw.co.zivai.core_backend.models.lms.users.User;
 
 public interface StudentSubjectEnrolmentRepository extends JpaRepository<StudentSubjectEnrolment, UUID> {
+    @EntityGraph(attributePaths = {"student", "classSubject", "classSubject.subject"})
+    List<StudentSubjectEnrolment> findByDeletedAtIsNull();
+
     @EntityGraph(attributePaths = {"student", "classSubject", "classSubject.subject"})
     List<StudentSubjectEnrolment> findByStudent_IdAndDeletedAtIsNull(UUID studentId);
 

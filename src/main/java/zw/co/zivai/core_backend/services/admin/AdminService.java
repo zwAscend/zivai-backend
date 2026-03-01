@@ -27,7 +27,7 @@ import zw.co.zivai.core_backend.dtos.admin.AdminSummaryRecentUserDto;
 import zw.co.zivai.core_backend.dtos.admin.AdminUpdateEdgeNodeRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.repositories.school.SchoolRepository;
 import zw.co.zivai.core_backend.repositories.user.UserRepository;
 

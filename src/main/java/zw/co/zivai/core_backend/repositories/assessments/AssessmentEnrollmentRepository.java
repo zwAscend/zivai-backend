@@ -6,20 +6,29 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import zw.co.zivai.core_backend.models.lms.AssessmentEnrollment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentEnrollment;
 
 public interface AssessmentEnrollmentRepository extends JpaRepository<AssessmentEnrollment, UUID> {
+    @EntityGraph(attributePaths = {"assessmentAssignment", "assessmentAssignment.assessment", "assessmentAssignment.classEntity", "student"})
     Optional<AssessmentEnrollment> findByAssessmentAssignment_IdAndStudent_Id(UUID assessmentAssignmentId, UUID studentId);
-    List<AssessmentEnrollment> findByStudent_Id(UUID studentId);
-    List<AssessmentEnrollment> findByAssessmentAssignment_Id(UUID assessmentAssignmentId);
+    @EntityGraph(attributePaths = {"assessmentAssignment", "assessmentAssignment.assessment", "assessmentAssignment.classEntity", "student"})
+    List<AssessmentEnrollment> findByDeletedAtIsNull();
+    @EntityGraph(attributePaths = {"assessmentAssignment", "assessmentAssignment.assessment", "assessmentAssignment.classEntity", "student"})
+    List<AssessmentEnrollment> findByStudent_IdAndDeletedAtIsNull(UUID studentId);
+    @EntityGraph(attributePaths = {"assessmentAssignment", "assessmentAssignment.assessment", "assessmentAssignment.classEntity", "student"})
+    List<AssessmentEnrollment> findByAssessmentAssignment_IdAndDeletedAtIsNull(UUID assessmentAssignmentId);
     List<AssessmentEnrollment> findByAssessmentAssignment_IdAndStudent_IdIn(UUID assessmentAssignmentId, Collection<UUID> studentIds);
     List<AssessmentEnrollment> findByAssessmentAssignment_IdInAndStudent_IdAndDeletedAtIsNull(Collection<UUID> assessmentAssignmentIds,
                                                                                                UUID studentId);
-    List<AssessmentEnrollment> findByAssessmentAssignment_ClassEntity_Id(UUID classId);
+    @EntityGraph(attributePaths = {"assessmentAssignment", "assessmentAssignment.assessment", "assessmentAssignment.classEntity", "student"})
+    List<AssessmentEnrollment> findByAssessmentAssignment_ClassEntity_IdAndDeletedAtIsNull(UUID classId);
+    @EntityGraph(attributePaths = {"assessmentAssignment", "assessmentAssignment.assessment", "assessmentAssignment.classEntity", "student"})
+    Optional<AssessmentEnrollment> findByIdAndDeletedAtIsNull(UUID id);
 
     @Query("""
         select distinct ae
