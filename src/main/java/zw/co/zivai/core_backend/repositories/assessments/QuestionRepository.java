@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import zw.co.zivai.core_backend.models.lms.Question;
+import zw.co.zivai.core_backend.models.lms.resources.Question;
 
 public interface QuestionRepository extends JpaRepository<Question, UUID> {
     List<Question> findBySubject_IdAndDeletedAtIsNull(UUID subjectId);

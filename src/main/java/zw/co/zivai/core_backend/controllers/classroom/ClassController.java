@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.classroom.CreateClassRequest;
 import zw.co.zivai.core_backend.dtos.classroom.UpdateClassRequest;
-import zw.co.zivai.core_backend.models.lms.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassEntity;
 import zw.co.zivai.core_backend.services.classroom.ClassService;
 
 @RestController

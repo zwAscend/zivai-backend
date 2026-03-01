@@ -13,7 +13,7 @@ import zw.co.zivai.core_backend.dtos.auth.AuthUserDto;
 import zw.co.zivai.core_backend.dtos.auth.LoginRequest;
 import zw.co.zivai.core_backend.dtos.auth.LoginResponse;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.repositories.user.UserRepository;
 
 @Service

@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.chat.CreateMessageRequest;
-import zw.co.zivai.core_backend.models.lms.Message;
+import zw.co.zivai.core_backend.models.lms.chat.Message;
 import zw.co.zivai.core_backend.services.chat.MessageService;
 
 @RestController

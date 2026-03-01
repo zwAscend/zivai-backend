@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import zw.co.zivai.core_backend.models.lms.MarkingSchemeItem;
+import zw.co.zivai.core_backend.models.lms.resources.MarkingSchemeItem;
 
 public interface MarkingSchemeItemRepository extends JpaRepository<MarkingSchemeItem, UUID> {
     @Query("""

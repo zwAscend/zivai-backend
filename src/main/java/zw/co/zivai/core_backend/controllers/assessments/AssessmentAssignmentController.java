@@ -19,8 +19,8 @@ import zw.co.zivai.core_backend.dtos.assessments.AssessmentEnrollmentSummaryDto;
 import zw.co.zivai.core_backend.dtos.assessments.BulkAssessmentEnrollmentRequest;
 import zw.co.zivai.core_backend.dtos.assessments.CreateAssessmentAssignmentRequest;
 import zw.co.zivai.core_backend.dtos.assessments.UpdateAssessmentAssignmentRequest;
-import zw.co.zivai.core_backend.models.lms.AssessmentAssignment;
-import zw.co.zivai.core_backend.models.lms.AssessmentEnrollment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAssignment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentEnrollment;
 import zw.co.zivai.core_backend.services.assessments.AssessmentAssignmentService;
 import zw.co.zivai.core_backend.services.assessments.AssessmentEnrollmentService;
 

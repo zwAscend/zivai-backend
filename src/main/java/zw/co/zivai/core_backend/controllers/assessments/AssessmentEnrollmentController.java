@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.assessments.AssessmentEnrollmentSummaryDto;
 import zw.co.zivai.core_backend.dtos.assessments.CreateAssessmentEnrollmentRequest;
-import zw.co.zivai.core_backend.models.lms.AssessmentEnrollment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentEnrollment;
 import zw.co.zivai.core_backend.services.assessments.AssessmentEnrollmentService;
 
 @RestController

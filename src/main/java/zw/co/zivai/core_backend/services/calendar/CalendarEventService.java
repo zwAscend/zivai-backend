@@ -18,14 +18,14 @@ import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.calendar.CalendarEventDto;
 import zw.co.zivai.core_backend.dtos.calendar.CalendarEventRequest;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.CalendarEvent;
-import zw.co.zivai.core_backend.models.lms.ClassSubject;
-import zw.co.zivai.core_backend.models.lms.ClassEntity;
-import zw.co.zivai.core_backend.models.lms.Enrolment;
-import zw.co.zivai.core_backend.models.lms.School;
-import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
-import zw.co.zivai.core_backend.models.lms.Subject;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.calendar.CalendarEvent;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassSubject;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.students.Enrolment;
+import zw.co.zivai.core_backend.models.lms.school.School;
+import zw.co.zivai.core_backend.models.lms.students.StudentSubjectEnrolment;
+import zw.co.zivai.core_backend.models.lms.subjects.Subject;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.repositories.calendar.CalendarEventRepository;
 import zw.co.zivai.core_backend.repositories.classroom.ClassRepository;
 import zw.co.zivai.core_backend.repositories.classroom.ClassSubjectRepository;
@@ -175,8 +175,7 @@ public class CalendarEventService {
         if (classEntity != null && classEntity.getSchool() != null) {
             return classEntity.getSchool();
         }
-        return schoolRepository.findAll().stream()
-            .findFirst()
+        return schoolRepository.findFirstByDeletedAtIsNullOrderByCreatedAtAsc()
             .orElseThrow(() -> new NotFoundException("No school found"));
     }
 
@@ -207,8 +206,7 @@ public class CalendarEventService {
             return teachers.get(0);
         }
 
-        return userRepository.findAllByDeletedAtIsNull().stream()
-            .findFirst()
+        return userRepository.findFirstByDeletedAtIsNullOrderByCreatedAtAsc()
             .orElseThrow(() -> new NotFoundException("No user found"));
     }
 

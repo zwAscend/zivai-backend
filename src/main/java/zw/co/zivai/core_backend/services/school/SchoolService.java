@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.schools.CreateSchoolRequest;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.School;
+import zw.co.zivai.core_backend.models.lms.school.School;
 import zw.co.zivai.core_backend.repositories.school.SchoolRepository;
 
 @Service

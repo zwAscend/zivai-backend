@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.notification.CreateNotificationRequest;
-import zw.co.zivai.core_backend.models.lms.Notification;
+import zw.co.zivai.core_backend.models.lms.chat.Notification;
 import zw.co.zivai.core_backend.services.notification.NotificationService;
 
 @RestController

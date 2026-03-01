@@ -20,7 +20,7 @@ import zw.co.zivai.core_backend.dtos.subjects.CreateSubjectRequest;
 import zw.co.zivai.core_backend.dtos.subjects.UpdateSubjectRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.Subject;
+import zw.co.zivai.core_backend.models.lms.subjects.Subject;
 import zw.co.zivai.core_backend.repositories.subject.SubjectRepository;
 
 @Service

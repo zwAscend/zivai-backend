@@ -6,7 +6,7 @@ import java.util.List;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.ClassSubject;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassSubject;
 
 public interface ClassSubjectRepository extends JpaRepository<ClassSubject, UUID> {
     long countByDeletedAtIsNull();

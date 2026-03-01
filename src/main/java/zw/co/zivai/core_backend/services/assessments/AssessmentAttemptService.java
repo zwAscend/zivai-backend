@@ -8,8 +8,8 @@ import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.assessments.CreateAssessmentAttemptRequest;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.AssessmentAttempt;
-import zw.co.zivai.core_backend.models.lms.AssessmentEnrollment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAttempt;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentEnrollment;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentAttemptRepository;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentEnrollmentRepository;
 

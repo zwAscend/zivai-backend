@@ -5,7 +5,7 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.Topic;
+import zw.co.zivai.core_backend.models.lms.resources.Topic;
 
 public interface TopicRepository extends JpaRepository<Topic, UUID> {
     List<Topic> findBySubject_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(UUID subjectId);

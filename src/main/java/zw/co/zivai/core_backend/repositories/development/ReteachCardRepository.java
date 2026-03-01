@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import zw.co.zivai.core_backend.models.lms.ReteachCard;
+import zw.co.zivai.core_backend.models.lms.teachers.ReteachCard;
 
 public interface ReteachCardRepository extends JpaRepository<ReteachCard, UUID> {
     @EntityGraph(attributePaths = {"subject", "topic"})

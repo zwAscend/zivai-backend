@@ -13,15 +13,16 @@ import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.notification.CreateNotificationRequest;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.Notification;
-import zw.co.zivai.core_backend.models.lms.School;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.chat.Notification;
+import zw.co.zivai.core_backend.models.lms.school.School;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.repositories.notification.NotificationRepository;
 import zw.co.zivai.core_backend.repositories.school.SchoolRepository;
 import zw.co.zivai.core_backend.repositories.user.UserRepository;
@@ -150,12 +151,8 @@ public class NotificationService {
     }
 
     public Notification get(UUID id) {
-        Notification notification = notificationRepository.findById(id)
+        return notificationRepository.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("Notification not found: " + id));
-        if (notification.getDeletedAt() != null) {
-            throw new NotFoundException("Notification not found: " + id);
-        }
-        return notification;
     }
 
 
@@ -188,15 +185,9 @@ public class NotificationService {
         markAllAsRead(null);
     }
 
+    @Transactional
     public void markAllAsRead(UUID recipientId) {
-        List<Notification> notifications = recipientId == null
-            ? notificationRepository.findByDeletedAtIsNullAndReadFalse()
-            : notificationRepository.findByRecipient_IdAndDeletedAtIsNullAndReadFalse(recipientId);
-        for (Notification notification : notifications) {
-            notification.setRead(true);
-            notification.setReadAt(Instant.now());
-        }
-        notificationRepository.saveAll(notifications);
+        notificationRepository.markAllAsRead(recipientId, Instant.now());
     }
 
     public void delete(UUID id) {

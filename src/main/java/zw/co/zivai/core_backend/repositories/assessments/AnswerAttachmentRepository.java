@@ -5,7 +5,7 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.AnswerAttachment;
+import zw.co.zivai.core_backend.models.lms.assessments.AnswerAttachment;
 
 public interface AnswerAttachmentRepository extends JpaRepository<AnswerAttachment, UUID> {
     List<AnswerAttachment> findByAttemptAnswer_Id(UUID attemptAnswerId);

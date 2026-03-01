@@ -10,11 +10,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import zw.co.zivai.core_backend.dtos.development.DevelopmentPlanDto;
 import zw.co.zivai.core_backend.dtos.students.StudentAssessmentDetailDto;
 import zw.co.zivai.core_backend.dtos.students.StudentAssessmentHistoryItemDto;
 import zw.co.zivai.core_backend.dtos.students.StudentDto;
 import zw.co.zivai.core_backend.dtos.students.StudentSubjectOverviewDto;
 import zw.co.zivai.core_backend.dtos.students.StudentTeacherDto;
+import zw.co.zivai.core_backend.services.development.DevelopmentService;
 import zw.co.zivai.core_backend.services.students.StudentService;
 
 @RestController
@@ -22,6 +24,7 @@ import zw.co.zivai.core_backend.services.students.StudentService;
 @RequiredArgsConstructor
 public class StudentController {
     private final StudentService studentService;
+    private final DevelopmentService developmentService;
 
     @GetMapping
     public List<StudentDto> list(@RequestParam(required = false) UUID subjectId,
@@ -59,5 +62,11 @@ public class StudentController {
     public StudentSubjectOverviewDto getSubjectOverview(@PathVariable UUID studentId,
                                                         @PathVariable UUID subjectId) {
         return studentService.getSubjectOverview(studentId, subjectId);
+    }
+
+    @GetMapping("/{studentId}/development-plans")
+    public List<DevelopmentPlanDto> getPublishedDevelopmentPlans(@PathVariable UUID studentId,
+                                                                 @RequestParam(required = false) UUID subjectId) {
+        return developmentService.getPublishedStudentPlans(studentId, subjectId);
     }
 }

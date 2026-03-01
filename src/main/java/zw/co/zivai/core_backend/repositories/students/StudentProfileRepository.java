@@ -6,7 +6,7 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.StudentProfile;
+import zw.co.zivai.core_backend.models.lms.students.StudentProfile;
 
 public interface StudentProfileRepository extends JpaRepository<StudentProfile, UUID> {
     Optional<StudentProfile> findByUserIdAndDeletedAtIsNull(UUID userId);

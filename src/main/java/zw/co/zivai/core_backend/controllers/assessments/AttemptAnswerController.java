@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.assessments.CreateAttemptAnswerRequest;
-import zw.co.zivai.core_backend.models.lms.AttemptAnswer;
+import zw.co.zivai.core_backend.models.lms.assessments.AttemptAnswer;
 import zw.co.zivai.core_backend.services.assessments.AttemptAnswerService;
 
 @RestController

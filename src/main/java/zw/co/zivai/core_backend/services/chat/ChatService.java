@@ -8,8 +8,8 @@ import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.chat.CreateChatRequest;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.Chat;
-import zw.co.zivai.core_backend.models.lms.School;
+import zw.co.zivai.core_backend.models.lms.chat.Chat;
+import zw.co.zivai.core_backend.models.lms.school.School;
 import zw.co.zivai.core_backend.repositories.chat.ChatRepository;
 import zw.co.zivai.core_backend.repositories.school.SchoolRepository;
 
@@ -20,7 +20,7 @@ public class ChatService {
     private final SchoolRepository schoolRepository;
 
     public Chat create(CreateChatRequest request) {
-        School school = schoolRepository.findById(request.getSchoolId())
+        School school = schoolRepository.findByIdAndDeletedAtIsNull(request.getSchoolId())
             .orElseThrow(() -> new NotFoundException("School not found: " + request.getSchoolId()));
 
         Chat chat = new Chat();
@@ -31,11 +31,11 @@ public class ChatService {
     }
 
     public List<Chat> list() {
-        return chatRepository.findAll();
+        return chatRepository.findAllByDeletedAtIsNull();
     }
 
     public Chat get(UUID id) {
-        return chatRepository.findById(id)
+        return chatRepository.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("Chat not found: " + id));
     }
 }

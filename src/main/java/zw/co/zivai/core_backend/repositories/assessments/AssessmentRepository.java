@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.Assessment;
+import zw.co.zivai.core_backend.models.lms.assessments.Assessment;
 
 public interface AssessmentRepository extends JpaRepository<Assessment, UUID> {
     @EntityGraph(attributePaths = {"school", "subject", "resource", "createdBy", "lastModifiedBy"})

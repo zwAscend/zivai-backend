@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.subjects.SubjectLegacyDto;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.Subject;
+import zw.co.zivai.core_backend.models.lms.subjects.Subject;
 import zw.co.zivai.core_backend.repositories.subject.SubjectRepository;
 
 @Service

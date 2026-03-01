@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.classroom.CreateEnrolmentRequest;
-import zw.co.zivai.core_backend.models.lms.Enrolment;
+import zw.co.zivai.core_backend.models.lms.students.Enrolment;
 import zw.co.zivai.core_backend.services.classroom.EnrolmentService;
 
 @RestController

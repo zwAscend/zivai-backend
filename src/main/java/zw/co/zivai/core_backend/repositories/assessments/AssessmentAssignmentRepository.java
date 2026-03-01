@@ -8,12 +8,19 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import zw.co.zivai.core_backend.models.lms.AssessmentAssignment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAssignment;
 
 public interface AssessmentAssignmentRepository extends JpaRepository<AssessmentAssignment, UUID> {
-    List<AssessmentAssignment> findByAssessment_Id(UUID assessmentId);
-    List<AssessmentAssignment> findByClassEntity_Id(UUID classId);
-    List<AssessmentAssignment> findByPublished(boolean published);
+    @EntityGraph(attributePaths = {"assessment", "assessment.subject", "classEntity", "assignedBy"})
+    List<AssessmentAssignment> findByDeletedAtIsNull();
+    @EntityGraph(attributePaths = {"assessment", "assessment.subject", "classEntity", "assignedBy"})
+    List<AssessmentAssignment> findByAssessment_IdAndDeletedAtIsNull(UUID assessmentId);
+    @EntityGraph(attributePaths = {"assessment", "assessment.subject", "classEntity", "assignedBy"})
+    List<AssessmentAssignment> findByClassEntity_IdAndDeletedAtIsNull(UUID classId);
+    @EntityGraph(attributePaths = {"assessment", "assessment.subject", "classEntity", "assignedBy"})
+    List<AssessmentAssignment> findByPublishedAndDeletedAtIsNull(boolean published);
+    @EntityGraph(attributePaths = {"assessment", "assessment.subject", "classEntity", "assignedBy"})
+    java.util.Optional<AssessmentAssignment> findByIdAndDeletedAtIsNull(UUID id);
 
     @EntityGraph(attributePaths = {"assessment", "assessment.subject", "classEntity", "assignedBy"})
     @Query("""

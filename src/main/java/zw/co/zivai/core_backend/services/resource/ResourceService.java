@@ -29,12 +29,12 @@ import zw.co.zivai.core_backend.dtos.resources.ResourceRecentDto;
 import zw.co.zivai.core_backend.dtos.resources.UpdateResourceRequest;
 import zw.co.zivai.core_backend.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.Resource;
-import zw.co.zivai.core_backend.models.lms.School;
-import zw.co.zivai.core_backend.models.lms.Subject;
-import zw.co.zivai.core_backend.models.lms.Topic;
-import zw.co.zivai.core_backend.models.lms.TopicResource;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.resources.Resource;
+import zw.co.zivai.core_backend.models.lms.school.School;
+import zw.co.zivai.core_backend.models.lms.subjects.Subject;
+import zw.co.zivai.core_backend.models.lms.resources.Topic;
+import zw.co.zivai.core_backend.models.lms.resources.TopicResource;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.repositories.classroom.StudentSubjectEnrolmentRepository;
 import zw.co.zivai.core_backend.repositories.resource.ResourceRepository;
 import zw.co.zivai.core_backend.repositories.resource.TopicResourceRepository;
@@ -231,6 +231,42 @@ public class ResourceService {
         }
         notifyIfVisibleToStudents(saved, wasVisibleToStudents);
         return toDto(saved, true, resolveTopicIds(saved.getId()));
+    }
+
+    public void delete(UUID id) {
+        Resource resource = get(id);
+        resource.setDeletedAt(Instant.now());
+        resource.setStatus("archived");
+        resourceRepository.save(resource);
+    }
+
+    public ResourceDto addTopics(UUID resourceId, List<UUID> topicIds) {
+        Resource resource = get(resourceId);
+        List<UUID> existingTopicIds = resolveTopicIds(resourceId).stream()
+            .map(UUID::fromString)
+            .collect(Collectors.toCollection(ArrayList::new));
+
+        if (topicIds != null) {
+            for (UUID topicId : topicIds) {
+                if (topicId != null && !existingTopicIds.contains(topicId)) {
+                    existingTopicIds.add(topicId);
+                }
+            }
+        }
+
+        syncResourceTopics(resource, existingTopicIds);
+        Resource saved = resourceRepository.save(resource);
+        return toDto(saved, true, resolveTopicIds(saved.getId()));
+    }
+
+    public ResourceDto removeTopic(UUID resourceId, UUID topicId) {
+        Resource resource = get(resourceId);
+        TopicResource link = topicResourceRepository.findByResource_IdAndTopic_IdAndDeletedAtIsNull(resourceId, topicId)
+            .orElseThrow(() -> new NotFoundException("Topic link not found for resource: " + topicId));
+        link.setDeletedAt(Instant.now());
+        topicResourceRepository.save(link);
+        normalizeTopicDisplayOrder(resourceId);
+        return toDto(resource, true, resolveTopicIds(resourceId));
     }
 
     public Map<String, ResourceCountsDto> getCounts() {
@@ -516,6 +552,17 @@ public class ResourceService {
 
         if (!linksToPersist.isEmpty()) {
             topicResourceRepository.saveAll(linksToPersist);
+        }
+    }
+
+    private void normalizeTopicDisplayOrder(UUID resourceId) {
+        List<TopicResource> activeLinks = topicResourceRepository
+            .findByResource_IdAndDeletedAtIsNullOrderByDisplayOrderAscCreatedAtAsc(resourceId);
+        for (int index = 0; index < activeLinks.size(); index += 1) {
+            activeLinks.get(index).setDisplayOrder(index);
+        }
+        if (!activeLinks.isEmpty()) {
+            topicResourceRepository.saveAll(activeLinks);
         }
     }
 

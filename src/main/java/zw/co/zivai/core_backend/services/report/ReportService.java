@@ -29,15 +29,15 @@ import zw.co.zivai.core_backend.dtos.termforecast.TermForecastDto;
 import zw.co.zivai.core_backend.dtos.assessments.SubjectTopicAnswerStat;
 import zw.co.zivai.core_backend.dtos.assessments.TopicAnswerStat;
 import zw.co.zivai.core_backend.exceptions.NotFoundException;
-import zw.co.zivai.core_backend.models.lms.Assessment;
-import zw.co.zivai.core_backend.models.lms.AssessmentAttempt;
-import zw.co.zivai.core_backend.models.lms.AssessmentAssignment;
-import zw.co.zivai.core_backend.models.lms.ClassEntity;
-import zw.co.zivai.core_backend.models.lms.StudentSubjectEnrolment;
-import zw.co.zivai.core_backend.models.lms.Subject;
-import zw.co.zivai.core_backend.models.lms.TermForecast;
-import zw.co.zivai.core_backend.models.lms.Topic;
-import zw.co.zivai.core_backend.models.lms.User;
+import zw.co.zivai.core_backend.models.lms.assessments.Assessment;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAttempt;
+import zw.co.zivai.core_backend.models.lms.assessments.AssessmentAssignment;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.students.StudentSubjectEnrolment;
+import zw.co.zivai.core_backend.models.lms.subjects.Subject;
+import zw.co.zivai.core_backend.models.lms.termforecast.TermForecast;
+import zw.co.zivai.core_backend.models.lms.resources.Topic;
+import zw.co.zivai.core_backend.models.lms.users.User;
 import zw.co.zivai.core_backend.repositories.assessments.AttemptAnswerRepository;
 import zw.co.zivai.core_backend.repositories.assessments.AssessmentAttemptRepository;
 import zw.co.zivai.core_backend.repositories.classroom.ClassRepository;
@@ -483,7 +483,7 @@ public class ReportService {
         if (subjectId != null) {
             return subjectRepository.findByIdAndDeletedAtIsNull(subjectId).orElse(null);
         }
-        return subjectRepository.findAllByDeletedAtIsNull().stream().findFirst().orElse(null);
+        return subjectRepository.findFirstByDeletedAtIsNullOrderByCreatedAtAsc().orElse(null);
     }
 
     private double calculateMastery(List<TopicAnswerStat> stats) {

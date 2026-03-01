@@ -22,10 +22,10 @@ import org.springframework.web.bind.annotation.RestController;
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.dtos.termforecast.TermForecastRequest;
 import zw.co.zivai.core_backend.dtos.termforecast.TermForecastResponse;
-import zw.co.zivai.core_backend.models.lms.ClassEntity;
-import zw.co.zivai.core_backend.models.lms.ClassSubject;
-import zw.co.zivai.core_backend.models.lms.Subject;
-import zw.co.zivai.core_backend.models.lms.TermForecast;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassSubject;
+import zw.co.zivai.core_backend.models.lms.subjects.Subject;
+import zw.co.zivai.core_backend.models.lms.termforecast.TermForecast;
 import zw.co.zivai.core_backend.repositories.termforecast.TermForecastRepository;
 import zw.co.zivai.core_backend.services.termforecast.TermForecastService;
 

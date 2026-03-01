@@ -6,7 +6,7 @@ import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import zw.co.zivai.core_backend.models.lms.ClassEntity;
+import zw.co.zivai.core_backend.models.lms.classroom.ClassEntity;
 
 public interface ClassRepository extends JpaRepository<ClassEntity, UUID> {
     Optional<ClassEntity> findByCode(String code);
