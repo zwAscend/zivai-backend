@@ -15,6 +15,9 @@ public interface AssessmentAssignmentRepository extends JpaRepository<Assessment
     List<AssessmentAssignment> findByDeletedAtIsNull();
     @EntityGraph(attributePaths = {"assessment", "assessment.subject", "classEntity", "assignedBy"})
     List<AssessmentAssignment> findByAssessment_IdAndDeletedAtIsNull(UUID assessmentId);
+    default List<AssessmentAssignment> findByAssessment_Id(UUID assessmentId) {
+        return findByAssessment_IdAndDeletedAtIsNull(assessmentId);
+    }
     @EntityGraph(attributePaths = {"assessment", "assessment.subject", "classEntity", "assignedBy"})
     List<AssessmentAssignment> findByClassEntity_IdAndDeletedAtIsNull(UUID classId);
     @EntityGraph(attributePaths = {"assessment", "assessment.subject", "classEntity", "assignedBy"})
