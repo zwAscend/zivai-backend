@@ -67,6 +67,10 @@ public class SyncOutboxService {
         return syncOutboxJdbcRepository.countByStatus(edgeNodeId, status);
     }
 
+    public void failInProgressBatch(UUID batchId, String errorMessage) {
+        syncOutboxJdbcRepository.failInProgressBatch(batchId, errorMessage);
+    }
+
     private String resolveOperation(BaseEntity entity) {
         if (entity.getDeletedAt() != null) {
             return "DELETE";

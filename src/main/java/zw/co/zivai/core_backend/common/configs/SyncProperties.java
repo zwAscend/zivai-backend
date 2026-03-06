@@ -21,6 +21,10 @@ public class SyncProperties {
         private boolean captureEnabled = true;
         private int batchSize = 100;
         private long pollIntervalMs = 30000L;
+        private int connectTimeoutMs = 5000;
+        private int readTimeoutMs = 45000;
+        private int httpMaxAttempts = 3;
+        private long retryBackoffMs = 1000L;
         private String cloudBaseUrl;
         private UUID nodeId;
         private String authKey;

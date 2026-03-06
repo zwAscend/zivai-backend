@@ -108,6 +108,23 @@ public class SyncOutboxJdbcRepository {
         return count == null ? 0L : count;
     }
 
+    public void failInProgressBatch(UUID batchId, String errorMessage) {
+        jdbcTemplate.update(
+            """
+            UPDATE edge.sync_outbox
+            SET status = 'FAILED',
+                next_retry_at = NOW() + INTERVAL '30 seconds',
+                last_error = ?,
+                locked_at = NULL,
+                locked_by = NULL
+            WHERE batch_id = ?
+              AND status = 'IN_PROGRESS'
+            """,
+            errorMessage,
+            batchId
+        );
+    }
+
     private SyncChangeItemDto mapChange(ResultSet rs) throws SQLException {
         try {
             return SyncChangeItemDto.builder()
