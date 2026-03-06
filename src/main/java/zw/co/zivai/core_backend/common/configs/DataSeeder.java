@@ -1,0 +1,1347 @@
+package zw.co.zivai.core_backend.common.configs;
+
+import java.io.EOFException;
+import java.sql.SQLException;
+import java.sql.SQLRecoverableException;
+import java.sql.SQLTransientException;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import jakarta.annotation.PreDestroy;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+
+import lombok.RequiredArgsConstructor;
+import zw.co.zivai.core_backend.common.models.lms.classroom.ClassEntity;
+import zw.co.zivai.core_backend.common.models.lms.calendar.CalendarEvent;
+import zw.co.zivai.core_backend.common.models.lms.classroom.ClassSubject;
+import zw.co.zivai.core_backend.common.models.lms.students.Enrolment;
+import zw.co.zivai.core_backend.common.models.lms.assessments.Assessment;
+import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentAssignment;
+import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentResult;
+import zw.co.zivai.core_backend.common.models.lms.chat.Chat;
+import zw.co.zivai.core_backend.common.models.lms.chat.ChatMember;
+import zw.co.zivai.core_backend.common.models.lms.chat.Message;
+import zw.co.zivai.core_backend.common.models.lms.development.Plan;
+import zw.co.zivai.core_backend.common.models.lms.development.PlanSkill;
+import zw.co.zivai.core_backend.common.models.lms.development.PlanStep;
+import zw.co.zivai.core_backend.common.models.lms.development.PlanSubskill;
+import zw.co.zivai.core_backend.common.models.lms.school.School;
+import zw.co.zivai.core_backend.common.models.lms.development.Skill;
+import zw.co.zivai.core_backend.common.models.lms.students.StudentAttribute;
+import zw.co.zivai.core_backend.common.models.lms.students.StudentPlan;
+import zw.co.zivai.core_backend.common.models.lms.students.StudentSubjectEnrolment;
+import zw.co.zivai.core_backend.common.models.lms.subjects.Subject;
+import zw.co.zivai.core_backend.common.models.lms.termforecast.TermForecast;
+import zw.co.zivai.core_backend.common.models.lms.resources.Topic;
+import zw.co.zivai.core_backend.common.models.lms.users.User;
+import zw.co.zivai.core_backend.common.models.lookups.Role;
+import zw.co.zivai.core_backend.common.repositories.classroom.ClassRepository;
+import zw.co.zivai.core_backend.common.repositories.classroom.ClassSubjectRepository;
+import zw.co.zivai.core_backend.common.repositories.calendar.CalendarEventRepository;
+import zw.co.zivai.core_backend.common.repositories.classroom.EnrolmentRepository;
+import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentAssignmentRepository;
+import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentRepository;
+import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentResultRepository;
+import zw.co.zivai.core_backend.common.repositories.chat.ChatMemberRepository;
+import zw.co.zivai.core_backend.common.repositories.chat.ChatRepository;
+import zw.co.zivai.core_backend.common.repositories.chat.MessageRepository;
+import zw.co.zivai.core_backend.common.repositories.development.PlanRepository;
+import zw.co.zivai.core_backend.common.repositories.development.PlanSkillRepository;
+import zw.co.zivai.core_backend.common.repositories.development.PlanStepRepository;
+import zw.co.zivai.core_backend.common.repositories.development.PlanSubskillRepository;
+import zw.co.zivai.core_backend.common.repositories.user.RoleRepository;
+import zw.co.zivai.core_backend.common.repositories.school.SchoolRepository;
+import zw.co.zivai.core_backend.common.repositories.subject.SkillRepository;
+import zw.co.zivai.core_backend.common.repositories.development.StudentAttributeRepository;
+import zw.co.zivai.core_backend.common.repositories.development.StudentPlanRepository;
+import zw.co.zivai.core_backend.common.repositories.classroom.StudentSubjectEnrolmentRepository;
+import zw.co.zivai.core_backend.common.repositories.subject.SubjectRepository;
+import zw.co.zivai.core_backend.common.repositories.termforecast.TermForecastRepository;
+import zw.co.zivai.core_backend.common.repositories.subject.TopicRepository;
+import zw.co.zivai.core_backend.common.repositories.user.UserRepository;
+
+@Configuration
+@RequiredArgsConstructor
+public class DataSeeder {
+    private static final Logger LOG = LoggerFactory.getLogger(DataSeeder.class);
+
+    private final JdbcTemplate jdbcTemplate;
+    private final RoleRepository roleRepository;
+    private final UserRepository userRepository;
+    private final SchoolRepository schoolRepository;
+    private final SubjectRepository subjectRepository;
+    private final ClassRepository classRepository;
+    private final ClassSubjectRepository classSubjectRepository;
+    private final EnrolmentRepository enrolmentRepository;
+    private final CalendarEventRepository calendarEventRepository;
+    private final AssessmentRepository assessmentRepository;
+    private final AssessmentAssignmentRepository assessmentAssignmentRepository;
+    private final AssessmentResultRepository assessmentResultRepository;
+    private final ChatRepository chatRepository;
+    private final ChatMemberRepository chatMemberRepository;
+    private final MessageRepository messageRepository;
+    private final SkillRepository skillRepository;
+    private final TopicRepository topicRepository;
+    private final StudentAttributeRepository studentAttributeRepository;
+    private final PlanRepository planRepository;
+    private final PlanStepRepository planStepRepository;
+    private final PlanSkillRepository planSkillRepository;
+    private final PlanSubskillRepository planSubskillRepository;
+    private final StudentPlanRepository studentPlanRepository;
+    private final StudentSubjectEnrolmentRepository studentSubjectEnrolmentRepository;
+    private final TermForecastRepository termForecastRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final ObjectMapper objectMapper;
+    private final RuntimeDeploymentContext runtimeDeploymentContext;
+
+    private static final String DEFAULT_SEEDED_PASSWORD = "TempPass123!";
+    private static final int SEED_MAX_RETRIES = 5;
+    private static final long SEED_RETRY_DELAY_MS = 1500L;
+    private final AtomicBoolean shutdownRequested = new AtomicBoolean(false);
+
+    @PreDestroy
+    void markShutdownRequested() {
+        shutdownRequested.set(true);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true", matchIfMissing = true)
+    CommandLineRunner seedUsers() {
+        return args -> runSeedingWithRetry();
+    }
+
+    private void runSeedingWithRetry() {
+        long delayMs = SEED_RETRY_DELAY_MS;
+        for (int attempt = 1; attempt <= SEED_MAX_RETRIES; attempt++) {
+            if (isShutdownRequested()) {
+                LOG.info("Skipping remaining seed attempts because shutdown is in progress.");
+                return;
+            }
+            try {
+                seedAll();
+                if (attempt > 1) {
+                    LOG.info("Data seeding recovered successfully on attempt {}/{}.", attempt, SEED_MAX_RETRIES);
+                }
+                return;
+            } catch (RuntimeException ex) {
+                if (isShutdownRequested()) {
+                    LOG.info("Seeder interrupted by shutdown; stopping seeding.");
+                    return;
+                }
+                if (!isTransientDbConnectivityIssue(ex) || attempt == SEED_MAX_RETRIES) {
+                    throw ex;
+                }
+                LOG.warn(
+                    "Transient DB connectivity issue while seeding (attempt {}/{}). Retrying in {} ms.",
+                    attempt,
+                    SEED_MAX_RETRIES,
+                    delayMs,
+                    ex
+                );
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException interruptedException) {
+                    Thread.currentThread().interrupt();
+                    LOG.info("Seeder retry sleep interrupted; stopping seeding.");
+                    return;
+                }
+                delayMs *= 2;
+            }
+        }
+    }
+
+    private void seedAll() {
+        if (isShutdownRequested()) {
+            return;
+        }
+        seedExamBoards();
+        seedEnrolmentStatuses();
+        seedAssessmentEnrollmentStatuses();
+        seedGradingStatuses();
+        seedQuestionTypes();
+
+        Role student = roleRepository.findByCode("student")
+            .orElseGet(() -> roleRepository.save(buildRole("student", "Student")));
+        Role teacher = roleRepository.findByCode("teacher")
+            .orElseGet(() -> roleRepository.save(buildRole("teacher", "Teacher")));
+        Role admin = roleRepository.findByCode("admin")
+            .orElseGet(() -> roleRepository.save(buildRole("admin", "Admin")));
+
+        seedUser("teacher@zivai.local", "263712000001", "teacher1", "Tariro", "Moyo", List.of(teacher));
+        seedUser("student@zivai.local", "263712000002", "student1", "Tinashe", "Dube", List.of(student));
+        seedUser("student2@zivai.local", "263712000004", "student2", "Rudo", "Mhlanga", List.of(student));
+        seedUser("student3@zivai.local", "263712000005", "student3", "Farai", "Ncube", List.of(student));
+        seedUser("student4@zivai.local", "263712000006", "student4", "Chipo", "Sibanda", List.of(student));
+        seedUser("student5@zivai.local", "263712000007", "student5", "Tafadzwa", "Maregere", List.of(student));
+        seedUser("student6@zivai.local", "263712000008", "student6", "Ashley", "Nyoni", List.of(student));
+        seedUser("admin@zivai.local", "263712000003", "admin1", "Admin", "User", List.of(admin));
+
+        User teacherUser = userRepository.findByEmail("teacher@zivai.local").orElse(null);
+        User studentUser = userRepository.findByEmail("student@zivai.local").orElse(null);
+        List<User> seededStudents = List.of(
+            studentUser,
+            userRepository.findByEmail("student2@zivai.local").orElse(null),
+            userRepository.findByEmail("student3@zivai.local").orElse(null),
+            userRepository.findByEmail("student4@zivai.local").orElse(null),
+            userRepository.findByEmail("student5@zivai.local").orElse(null),
+            userRepository.findByEmail("student6@zivai.local").orElse(null)
+        ).stream().filter(java.util.Objects::nonNull).toList();
+
+        School school = schoolRepository.findByCode("ZVHS")
+            .orElseGet(() -> {
+                School created = new School();
+                created.setCode("ZVHS");
+                created.setName("zivAI High School");
+                created.setCountryCode("ZW");
+                return schoolRepository.save(created);
+            });
+
+        if (isEdgeRuntime()) {
+            seedDefaultEdgeNode(school);
+        }
+
+        seedSubject("CS", "Computer Science", "Core computer science for Form 3-4");
+        seedSubject("MATH", "Mathematics", "Core maths for Form 1-4");
+        seedSubject("ENG", "English Language", "Reading, writing, and comprehension");
+        seedSubject("PHY", "Physics", "Mechanics, waves, and electricity");
+
+        Subject csSubject = subjectRepository.findByCode("CS").orElse(null);
+        Subject mathSubject = subjectRepository.findByCode("MATH").orElse(null);
+        Subject engSubject = subjectRepository.findByCode("ENG").orElse(null);
+
+        ClassEntity classEntity = null;
+        ClassSubject csLink = null;
+        ClassSubject mathLink = null;
+        ClassSubject engLink = null;
+
+        if (teacherUser != null) {
+            classEntity = classRepository.findByCode("FORM3-A")
+                .orElseGet(() -> {
+                    ClassEntity created = new ClassEntity();
+                    created.setSchool(school);
+                    created.setCode("FORM3-A");
+                    created.setName("Form 3A");
+                    created.setGradeLevel("Form 3");
+                    created.setAcademicYear("2026");
+                    created.setHomeroomTeacher(teacherUser);
+                    return classRepository.save(created);
+                });
+
+            for (User seededStudent : seededStudents) {
+                seedClassEnrolment(seededStudent, classEntity);
+            }
+
+            if (csSubject != null) {
+                csLink = seedClassSubject(school, classEntity, csSubject, teacherUser, "2026", "Term 1");
+                for (User seededStudent : seededStudents) {
+                    seedStudentSubjectEnrolment(seededStudent, csLink);
+                }
+            }
+            if (mathSubject != null) {
+                mathLink = seedClassSubject(school, classEntity, mathSubject, teacherUser, "2026", "Term 1");
+                for (User seededStudent : seededStudents) {
+                    seedStudentSubjectEnrolment(seededStudent, mathLink);
+                }
+            }
+            if (engSubject != null) {
+                engLink = seedClassSubject(school, classEntity, engSubject, teacherUser, "2026", "Term 1");
+                for (User seededStudent : seededStudents) {
+                    seedStudentSubjectEnrolment(seededStudent, engLink);
+                }
+            }
+        }
+
+        seedDefaultStudentPlansForExistingSubjectEnrolments();
+
+        if (csSubject != null) {
+            List<Topic> csCurriculum = seedComputerScienceCurriculum(csSubject);
+            if (csLink != null && !csCurriculum.isEmpty()) {
+                List<java.util.UUID> termTopics = csCurriculum.stream()
+                    .filter(topic -> List.of("CS.1", "CS.2", "CS.3").contains(topic.getCode()))
+                    .map(Topic::getId)
+                    .toList();
+                if (!termTopics.isEmpty()) {
+                    seedTermForecast(csLink, teacherUser, "Term 1", "2026", 68.0,
+                        termTopics,
+                        "Focus on Form 3 Computer Science foundations: hardware/software, applications, and data representation.");
+                }
+            }
+        }
+
+        if (mathSubject != null) {
+            List<Topic> mathCurriculum = seedMathCurriculum(mathSubject);
+            if (mathLink != null && !mathCurriculum.isEmpty()) {
+                List<java.util.UUID> termTopics = mathCurriculum.stream()
+                    .filter(topic -> List.of("6.1", "6.2", "6.3").contains(topic.getCode()))
+                    .map(Topic::getId)
+                    .toList();
+                if (!termTopics.isEmpty()) {
+                    seedTermForecast(mathLink, teacherUser, "Term 1", "2026", 70.0,
+                        termTopics,
+                        "Focus on number, sets, and consumer arithmetic foundations.");
+                }
+            }
+        }
+
+        if (engSubject != null) {
+            Topic comprehension = seedTopic(engSubject, "COMP", "Reading Comprehension", "Reading and interpretation.", 1);
+            Topic writing = seedTopic(engSubject, "WRIT", "Writing Skills", "Grammar and structured writing.", 2);
+            seedTopic(engSubject, "GRAM", "Grammar & Usage", "Core grammar rules and usage.", 3);
+
+            if (engLink != null) {
+                seedTermForecast(engLink, teacherUser, "Term 1", "2026", 65.0,
+                    List.of(comprehension.getId(), writing.getId()),
+                    "Prioritize comprehension and writing mastery.");
+            }
+        }
+
+        if (teacherUser != null) {
+            seedCalendarEvents(school, teacherUser);
+        }
+
+        if (teacherUser != null && studentUser != null) {
+            seedChatData(school, teacherUser, studentUser);
+        }
+
+        if (teacherUser != null && studentUser != null) {
+            seedAssessmentData(school, teacherUser, studentUser, classEntity, csSubject != null ? csSubject : mathSubject, csSubject != null ? csLink : mathLink);
+            seedAssessmentData(school, teacherUser, studentUser, classEntity, engSubject, engLink);
+        }
+
+        if (studentUser != null) {
+            seedDevelopmentData(csSubject != null ? csSubject : mathSubject, engSubject, studentUser);
+        }
+    }
+
+    private boolean isShutdownRequested() {
+        return shutdownRequested.get() || Thread.currentThread().isInterrupted();
+    }
+
+    private boolean isTransientDbConnectivityIssue(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && (
+                message.contains("password authentication failed") ||
+                message.contains("no password was provided")
+            )) {
+                return false;
+            }
+
+            if (current instanceof SQLTransientException || current instanceof SQLRecoverableException || current instanceof EOFException) {
+                return true;
+            }
+            if (current instanceof SQLException sqlException) {
+                String sqlState = sqlException.getSQLState();
+                if (sqlState != null && sqlState.startsWith("08")) {
+                    return true;
+                }
+            }
+            if (message != null && (
+                message.contains("SQLSTATE(08006)") ||
+                message.contains("Connection is closed") ||
+                message.contains("An I/O error occurred while sending to the backend")
+            )) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private Role buildRole(String code, String name) {
+        Role role = new Role();
+        role.setCode(code);
+        role.setName(name);
+        return role;
+    }
+
+    private void seedUser(String email, String phoneNumber, String username, String firstName, String lastName, List<Role> roles) {
+        User existing = userRepository.findByEmail(email).orElse(null);
+        if (existing != null) {
+            boolean updated = false;
+            if (existing.getPasswordHash() == null || existing.getPasswordHash().isBlank()
+                || !passwordEncoder.matches(DEFAULT_SEEDED_PASSWORD, existing.getPasswordHash())) {
+                existing.setPasswordHash(passwordEncoder.encode(DEFAULT_SEEDED_PASSWORD));
+                updated = true;
+            }
+            if (!existing.isActive()) {
+                existing.setActive(true);
+                updated = true;
+            }
+            if (existing.getDeletedAt() != null) {
+                existing.setDeletedAt(null);
+                updated = true;
+            }
+            if (roles != null && !roles.isEmpty()) {
+                for (Role role : roles) {
+                    if (!existing.getRoles().contains(role)) {
+                        existing.getRoles().add(role);
+                        updated = true;
+                    }
+                }
+            }
+            if (updated) {
+                userRepository.save(existing);
+            }
+            return;
+        }
+        User user = new User();
+        user.setEmail(email);
+        user.setPhoneNumber(phoneNumber);
+        user.setUsername(username);
+        user.setFirstName(firstName);
+        user.setLastName(lastName);
+        user.setActive(true);
+        user.setPasswordHash(passwordEncoder.encode(DEFAULT_SEEDED_PASSWORD));
+        user.getRoles().addAll(roles);
+        userRepository.save(user);
+    }
+
+    private boolean isEdgeRuntime() {
+        return runtimeDeploymentContext.isEdgeRole();
+    }
+
+    private void seedDefaultEdgeNode(School school) {
+        Long existingCount = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)::bigint
+            FROM edge.edge_nodes
+            WHERE deleted_at IS NULL
+            """,
+            Long.class
+        );
+        if (existingCount != null && existingCount > 0) {
+            return;
+        }
+
+        jdbcTemplate.update(
+            """
+            INSERT INTO edge.edge_nodes (
+              school_id, device_id, node_code, status, software_version,
+              metadata, auth_key_hash, sync_enabled, tenant_code
+            ) VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb), ?, TRUE, ?)
+            """,
+            school == null ? null : school.getId(),
+            "EDGE-DEMO-01",
+            "demo-edge-01",
+            "active",
+            "demo",
+            "{\"location\":\"Main server room\",\"comments\":\"Default demo edge node\"}",
+            passwordEncoder.encode("demo-sync-key"),
+            "demo-school"
+        );
+    }
+
+    private void seedSubject(String code, String name, String description) {
+        if (subjectRepository.findByCode(code).isPresent()) {
+            return;
+        }
+        Subject subject = new Subject();
+        subject.setCode(code);
+        subject.setName(name);
+        subject.setDescription(description);
+        subject.setActive(true);
+        subjectRepository.save(subject);
+    }
+
+    private void seedCalendarEvents(School school, User teacher) {
+        if (calendarEventRepository.count() > 0) {
+            return;
+        }
+
+        List<Subject> subjects = subjectRepository.findAll();
+        Subject cs = subjects.stream().filter(s -> "CS".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
+        Subject math = subjects.stream().filter(s -> "MATH".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
+        Subject eng = subjects.stream().filter(s -> "ENG".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
+        Subject phy = subjects.stream().filter(s -> "PHY".equalsIgnoreCase(s.getCode())).findFirst().orElse(null);
+        Subject coreSubject = cs != null ? cs : math;
+
+        CalendarEvent lesson = new CalendarEvent();
+        lesson.setSchool(school);
+        lesson.setTitle(coreSubject != null && coreSubject.getName() != null ? coreSubject.getName() + " Lesson" : "Core Subject Lesson");
+        lesson.setDescription(cs != null
+            ? "Introduction to programming concepts and problem-solving."
+            : "Introduction to algebraic expressions");
+        lesson.setStartTime(java.time.Instant.now().plusSeconds(2 * 60 * 60));
+        lesson.setEndTime(java.time.Instant.now().plusSeconds(3 * 60 * 60));
+        lesson.setEventType("lesson");
+        lesson.setSubject(coreSubject);
+        lesson.setLocation("Room 101");
+        lesson.setCreatedBy(teacher);
+        calendarEventRepository.save(lesson);
+
+        CalendarEvent assignmentDue = new CalendarEvent();
+        assignmentDue.setSchool(school);
+        assignmentDue.setTitle("English Assignment Due");
+        assignmentDue.setDescription("Reading comprehension worksheet");
+        assignmentDue.setStartTime(java.time.Instant.now().plusSeconds(24 * 60 * 60));
+        assignmentDue.setAllDay(true);
+        assignmentDue.setEventType("assignment_due");
+        assignmentDue.setSubject(eng);
+        assignmentDue.setLocation("Classroom");
+        assignmentDue.setCreatedBy(teacher);
+        calendarEventRepository.save(assignmentDue);
+
+        CalendarEvent labSession = new CalendarEvent();
+        labSession.setSchool(school);
+        labSession.setTitle("Physics Lab Session");
+        labSession.setDescription("Intro to basic circuits");
+        labSession.setStartTime(java.time.Instant.now().plusSeconds(3 * 24 * 60 * 60));
+        labSession.setEndTime(java.time.Instant.now().plusSeconds(3 * 24 * 60 * 60 + 2 * 60 * 60));
+        labSession.setEventType("lab");
+        labSession.setSubject(phy);
+        labSession.setLocation("Lab 2");
+        labSession.setCreatedBy(teacher);
+        calendarEventRepository.save(labSession);
+
+        CalendarEvent quiz = new CalendarEvent();
+        quiz.setSchool(school);
+        quiz.setTitle(coreSubject != null && coreSubject.getName() != null ? coreSubject.getName() + " Quiz" : "Weekly Quiz");
+        quiz.setDescription(cs != null ? "Programming fundamentals quiz" : "Algebra basics quiz");
+        quiz.setStartTime(java.time.Instant.now().plusSeconds(5 * 24 * 60 * 60));
+        quiz.setEndTime(java.time.Instant.now().plusSeconds(5 * 24 * 60 * 60 + 60 * 60));
+        quiz.setEventType("quiz");
+        quiz.setSubject(coreSubject);
+        quiz.setLocation("Room 101");
+        quiz.setCreatedBy(teacher);
+        calendarEventRepository.save(quiz);
+    }
+
+    private void seedDevelopmentData(Subject coreSubject, Subject eng, User student) {
+        if (coreSubject == null || eng == null) {
+            return;
+        }
+
+        Skill coreProgramming = seedSkill(coreSubject, "CSPROG", "Programming Fundamentals", "Foundations of coding and computational thinking");
+        Skill coreData = seedSkill(coreSubject, "CSDATA", "Data Representation", "Binary, number bases, and logic");
+        Skill coreNetworks = seedSkill(coreSubject, "CSNET", "Networks and Security", "Networking concepts, protocols, and safe systems");
+        Skill comprehension = seedSkill(eng, "COMP", "Comprehension", "Reading and interpretation");
+        Skill writing = seedSkill(eng, "WRIT", "Writing Skills", "Grammar and structured writing");
+
+        seedStudentAttribute(student, coreProgramming, 62.0, 84.0);
+        seedStudentAttribute(student, coreData, 58.0, 82.0);
+        seedStudentAttribute(student, coreNetworks, 55.0, 80.0);
+        seedStudentAttribute(student, comprehension, 72.0, 86.0);
+        seedStudentAttribute(student, writing, 65.0, 83.0);
+
+        if (planRepository.findBySubject_Id(coreSubject.getId()).isEmpty()) {
+            Plan corePlan = new Plan();
+            corePlan.setSubject(coreSubject);
+            corePlan.setName(coreSubject.getName() + " Mastery Plan");
+            corePlan.setDescription("Build core competency through coding practice, data representation, and systems thinking.");
+            corePlan.setProgress(0.0);
+            corePlan.setPotentialOverall(86.0);
+            corePlan.setEtaDays(30);
+            corePlan.setPerformance("Average");
+            corePlan = planRepository.save(corePlan);
+
+            PlanSkill programmingSkill = seedPlanSkill(corePlan, coreProgramming.getName(), 86.0);
+            seedPlanSubskill(programmingSkill, "Algorithm design", 60.0, "yellow");
+            seedPlanSubskill(programmingSkill, "Structured coding", 58.0, "yellow");
+
+            PlanSkill dataSkill = seedPlanSkill(corePlan, coreData.getName(), 82.0);
+            seedPlanSubskill(dataSkill, "Number bases", 63.0, "yellow");
+            seedPlanSubskill(dataSkill, "Logic gates", 57.0, "yellow");
+
+            seedPlanStep(corePlan, "Review algorithm tools and tracing", "reading", 1, null);
+            seedPlanStep(corePlan, "Practice coding drills", "exercise", 2, null);
+            seedPlanStep(corePlan, "Complete weekly practical task", "assessment", 3, null);
+
+            seedStudentPlan(student, corePlan, coreSubject);
+        }
+
+        if (planRepository.findBySubject_Id(eng.getId()).isEmpty()) {
+            Plan engPlan = new Plan();
+            engPlan.setSubject(eng);
+            engPlan.setName("English Mastery Plan");
+            engPlan.setDescription("Improve comprehension and writing fluency.");
+            engPlan.setProgress(0.0);
+            engPlan.setPotentialOverall(88.0);
+            engPlan.setEtaDays(28);
+            engPlan.setPerformance("Good");
+            engPlan = planRepository.save(engPlan);
+
+            PlanSkill compSkill = seedPlanSkill(engPlan, comprehension.getName(), 88.0);
+            seedPlanSubskill(compSkill, "Inference", 70.0, "yellow");
+            seedPlanSubskill(compSkill, "Summary writing", 65.0, "yellow");
+
+            PlanSkill writingSkill = seedPlanSkill(engPlan, writing.getName(), 90.0);
+            seedPlanSubskill(writingSkill, "Essay structure", 68.0, "yellow");
+            seedPlanSubskill(writingSkill, "Grammar practice", 72.0, "yellow");
+
+            seedPlanStep(engPlan, "Read short story", "reading", 1, null);
+            seedPlanStep(engPlan, "Write a paragraph response", "assignment", 2, null);
+            seedPlanStep(engPlan, "Weekly feedback session", "meeting", 3, null);
+
+            seedStudentPlan(student, engPlan, eng);
+        }
+    }
+
+    private Skill seedSkill(Subject subject, String code, String name, String description) {
+        return skillRepository.findBySubject_IdAndCode(subject.getId(), code)
+            .orElseGet(() -> {
+                Skill skill = new Skill();
+                skill.setSubject(subject);
+                skill.setCode(code);
+                skill.setName(name);
+                skill.setDescription(description);
+                return skillRepository.save(skill);
+            });
+    }
+
+    private Topic seedTopic(Subject subject, String code, String name, String description, int sequenceIndex) {
+        return topicRepository.findBySubject_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(subject.getId()).stream()
+            .filter(existing -> code.equalsIgnoreCase(existing.getCode()))
+            .findFirst()
+            .orElseGet(() -> {
+                Topic topic = new Topic();
+                topic.setSubject(subject);
+                topic.setCode(code);
+                topic.setName(name);
+                topic.setDescription(description);
+                topic.setSequenceIndex(sequenceIndex);
+                return topicRepository.save(topic);
+            });
+    }
+
+    private Skill seedSkill(Subject subject, Topic topic, String code, String name, String description, int sequenceIndex) {
+        return skillRepository.findBySubject_IdAndCode(subject.getId(), code)
+            .orElseGet(() -> {
+                Skill skill = new Skill();
+                skill.setSubject(subject);
+                skill.setTopic(topic);
+                skill.setCode(code);
+                skill.setName(name);
+                skill.setDescription(description);
+                skill.setSequenceIndex(sequenceIndex);
+                return skillRepository.save(skill);
+            });
+    }
+
+    private List<Topic> seedComputerScienceCurriculum(Subject subject) {
+        if (subject == null) {
+            return List.of();
+        }
+
+        List<Topic> topics = new java.util.ArrayList<>();
+
+        Topic hardwareSoftware = seedTopic(subject, "CS.1", "Hardware and Software",
+            "Form 3 and 4 focus on hardware devices, operating systems, and maintenance.", 1);
+        topics.add(hardwareSoftware);
+        seedSkill(subject, hardwareSoftware, "CS.1.F3.1", "Hardware devices", "Form 3 focus area.", 1);
+        seedSkill(subject, hardwareSoftware, "CS.1.F3.2", "Operating systems", "Form 3 focus area.", 2);
+        seedSkill(subject, hardwareSoftware, "CS.1.F4.1", "Hardware and software maintenance", "Form 4 focus area.", 3);
+
+        Topic applications = seedTopic(subject, "CS.2", "Application of Computer Science",
+            "Applied computer science domains for Form 3 and Form 4.", 2);
+        topics.add(applications);
+        seedSkill(subject, applications, "CS.2.F3.1", "Agriculture", "Form 3 application area.", 1);
+        seedSkill(subject, applications, "CS.2.F3.2", "Computer aided manufacturing", "Form 3 application area.", 2);
+        seedSkill(subject, applications, "CS.2.F3.3", "Intelligent systems", "Form 3 application area.", 3);
+        seedSkill(subject, applications, "CS.2.F3.4", "Wildlife management", "Form 3 application area.", 4);
+        seedSkill(subject, applications, "CS.2.F3.5", "Mining", "Form 3 application area.", 5);
+        seedSkill(subject, applications, "CS.2.F4.1", "Agriculture", "Form 4 application area.", 6);
+        seedSkill(subject, applications, "CS.2.F4.2", "Ambient systems", "Form 4 application area.", 7);
+        seedSkill(subject, applications, "CS.2.F4.3", "Geographic Information System", "Form 4 application area.", 8);
+
+        Topic dataRepresentation = seedTopic(subject, "CS.3", "Data Representation",
+            "Form 3 and 4 data encoding, storage, and logic concepts.", 3);
+        topics.add(dataRepresentation);
+        seedSkill(subject, dataRepresentation, "CS.3.F3.1", "Units of storage", "Form 3 focus area.", 1);
+        seedSkill(subject, dataRepresentation, "CS.3.F3.2", "Number bases", "Form 3 focus area.", 2);
+        seedSkill(subject, dataRepresentation, "CS.3.F4.1", "Logic gates", "Form 4 focus area.", 3);
+        seedSkill(subject, dataRepresentation, "CS.3.F4.2", "Truth tables", "Form 4 focus area.", 4);
+
+        Topic networks = seedTopic(subject, "CS.4", "Communication Networks and Internet Technologies",
+            "Form 3 and 4 communication technologies and networking infrastructure.", 4);
+        topics.add(networks);
+        seedSkill(subject, networks, "CS.4.F3.1", "Mobile technology", "Form 3 focus area.", 1);
+        seedSkill(subject, networks, "CS.4.F3.2", "Cloud services", "Form 3 focus area.", 2);
+        seedSkill(subject, networks, "CS.4.F4.1", "Network protocols", "Form 4 focus area.", 3);
+        seedSkill(subject, networks, "CS.4.F4.2", "Networking devices", "Form 4 focus area.", 4);
+
+        Topic securityEthics = seedTopic(subject, "CS.5", "Security and Ethics (Unhu/Ubuntu/Vumunhu)",
+            "Form 3 and 4 security, privacy, and ethical computing.", 5);
+        topics.add(securityEthics);
+        seedSkill(subject, securityEthics, "CS.5.F3.1", "Privacy and data integrity", "Form 3 focus area.", 1);
+        seedSkill(subject, securityEthics, "CS.5.F3.2", "System security", "Form 3 focus area.", 2);
+        seedSkill(subject, securityEthics, "CS.5.F3.3", "Cybercrime", "Form 3 focus area.", 3);
+        seedSkill(subject, securityEthics, "CS.5.F4.1", "Data backup", "Form 4 focus area.", 4);
+        seedSkill(subject, securityEthics, "CS.5.F4.2", "Disaster recovery plan", "Form 4 focus area.", 5);
+
+        Topic systemsDesign = seedTopic(subject, "CS.6", "Systems Analysis and Design",
+            "Form 3 and 4 systems lifecycle practices.", 6);
+        topics.add(systemsDesign);
+        seedSkill(subject, systemsDesign, "CS.6.F3.1", "Systems analysis", "Form 3 focus area.", 1);
+        seedSkill(subject, systemsDesign, "CS.6.F3.2", "Systems design", "Form 3 focus area.", 2);
+        seedSkill(subject, systemsDesign, "CS.6.F3.3", "Development and testing", "Form 3 focus area.", 3);
+        seedSkill(subject, systemsDesign, "CS.6.F4.1", "Documentation", "Form 4 focus area.", 4);
+        seedSkill(subject, systemsDesign, "CS.6.F4.2", "User training", "Form 4 focus area.", 5);
+        seedSkill(subject, systemsDesign, "CS.6.F4.3", "Implementation, evaluation and maintenance", "Form 4 focus area.", 6);
+
+        Topic algorithms = seedTopic(subject, "CS.7", "Algorithm Design and Problem Solving",
+            "Form 3 and 4 algorithm development and quality checks.", 7);
+        topics.add(algorithms);
+        seedSkill(subject, algorithms, "CS.7.F3.1", "Algorithm tools", "Form 3 focus area.", 1);
+        seedSkill(subject, algorithms, "CS.7.F3.2", "Interpreting and testing algorithms", "Form 3 focus area.", 2);
+        seedSkill(subject, algorithms, "CS.7.F4.1", "Algorithm design", "Form 4 focus area.", 3);
+
+        Topic programming = seedTopic(subject, "CS.8", "Programming",
+            "Form 3 and 4 programming practices and software quality.", 8);
+        topics.add(programming);
+        seedSkill(subject, programming, "CS.8.F3.1", "Interface design", "Form 3 focus area.", 1);
+        seedSkill(subject, programming, "CS.8.F3.2", "Visual programming", "Form 3 focus area.", 2);
+        seedSkill(subject, programming, "CS.8.F3.3", "Testing and debugging", "Form 3 focus area.", 3);
+        seedSkill(subject, programming, "CS.8.F3.4", "Errors", "Form 3 focus area.", 4);
+        seedSkill(subject, programming, "CS.8.F4.1", "Coding programs", "Form 4 focus area.", 5);
+        seedSkill(subject, programming, "CS.8.F4.2", "Testing and debugging", "Form 4 focus area.", 6);
+
+        Topic databases = seedTopic(subject, "CS.9", "Databases",
+            "Form 3 and 4 database design, querying, and security.", 9);
+        topics.add(databases);
+        seedSkill(subject, databases, "CS.9.F3.1", "Database objects and views", "Form 3 focus area.", 1);
+        seedSkill(subject, databases, "CS.9.F3.2", "External data sources", "Form 3 focus area.", 2);
+        seedSkill(subject, databases, "CS.9.F3.3", "Database security", "Form 3 focus area.", 3);
+        seedSkill(subject, databases, "CS.9.F4.1", "Advanced queries", "Form 4 focus area.", 4);
+        seedSkill(subject, databases, "CS.9.F4.2", "Database connection", "Form 4 focus area.", 5);
+        seedSkill(subject, databases, "CS.9.F4.3", "Database security", "Form 4 focus area.", 6);
+
+        Topic webDesign = seedTopic(subject, "CS.10", "Web Design",
+            "Form 3 and 4 web design, development, and hardening.", 10);
+        topics.add(webDesign);
+        seedSkill(subject, webDesign, "CS.10.F3.1", "CMS", "Form 3 focus area.", 1);
+        seedSkill(subject, webDesign, "CS.10.F3.2", "Graphic design", "Form 3 focus area.", 2);
+        seedSkill(subject, webDesign, "CS.10.F3.3", "Ads", "Form 3 focus area.", 3);
+        seedSkill(subject, webDesign, "CS.10.F3.4", "Web security", "Form 3 focus area.", 4);
+        seedSkill(subject, webDesign, "CS.10.F3.5", "Plugins and extensions", "Form 3 focus area.", 5);
+        seedSkill(subject, webDesign, "CS.10.F4.1", "Web development", "Form 4 focus area.", 6);
+        seedSkill(subject, webDesign, "CS.10.F4.2", "Web security", "Form 4 focus area.", 7);
+        seedSkill(subject, webDesign, "CS.10.F4.3", "Testing and debugging", "Form 4 focus area.", 8);
+
+        Topic technopreneurship = seedTopic(subject, "CS.11", "Technopreneurship",
+            "Form 3 and 4 innovation, policy, and commercialisation topics.", 11);
+        topics.add(technopreneurship);
+        seedSkill(subject, technopreneurship, "CS.11.F3.1", "Laws and policies on technopreneurship", "Form 3 focus area.", 1);
+        seedSkill(subject, technopreneurship, "CS.11.F3.2", "Intellectual property rights", "Form 3 focus area.", 2);
+        seedSkill(subject, technopreneurship, "CS.11.F4.1", "Finance and funding", "Form 4 focus area.", 3);
+        seedSkill(subject, technopreneurship, "CS.11.F4.2", "Market research", "Form 4 focus area.", 4);
+
+        return topics;
+    }
+
+    private List<Topic> seedMathCurriculum(Subject subject) {
+        if (subject == null) {
+            return List.of();
+        }
+
+        List<Topic> topics = new java.util.ArrayList<>();
+
+        Topic number = seedTopic(subject, "6.1", "Number",
+            "Number concepts, operations, approximations, bases, ratio and scale.", 1);
+        topics.add(number);
+        seedSkill(subject, number, "6.1.1", "Number concepts and operations",
+            "Number types, fractions/decimals/percentages, number line, directed numbers, HCF/LCM, operations and precedence.", 1);
+        seedSkill(subject, number, "6.1.2", "Approximations and estimates",
+            "Significant figures, decimal places, rounding and estimation in context.", 2);
+        seedSkill(subject, number, "6.1.3", "Limits of accuracy",
+            "Upper and lower bounds for measurements and calculations.", 3);
+        seedSkill(subject, number, "6.1.4", "Standard form",
+            "Scientific notation A × 10^n.", 4);
+        seedSkill(subject, number, "6.1.5", "Number bases",
+            "Convert between bases 2–10 and interpret place value.", 5);
+        seedSkill(subject, number, "6.1.6", "Ratio, proportion and rates",
+            "Use ratio and proportion in practical contexts.", 6);
+        seedSkill(subject, number, "6.1.7", "Scale and map problems",
+            "Use scale factors and interpret maps/drawings.", 7);
+
+        Topic sets = seedTopic(subject, "6.2", "Sets",
+            "Set language, notation, operations, and Venn diagrams.", 2);
+        topics.add(sets);
+        seedSkill(subject, sets, "6.2.1", "Language and notation",
+            "Set builder notation, elements, subsets, universal and empty sets.", 1);
+        seedSkill(subject, sets, "6.2.2", "Operations on sets",
+            "Union, intersection, complement and set laws.", 2);
+        seedSkill(subject, sets, "6.2.3", "Venn diagrams",
+            "Solve problems using Venn diagrams (up to three sets).", 3);
+
+        Topic consumer = seedTopic(subject, "6.3", "Consumer Arithmetic",
+            "Real-life finance, rates, and consumer calculations.", 3);
+        topics.add(consumer);
+        seedSkill(subject, consumer, "6.3.1", "Interpreting real-life data",
+            "Bills, bank statements, mortgages, and media data interpretation.", 1);
+        seedSkill(subject, consumer, "6.3.2", "Rates and currency exchange",
+            "Rates, ratios, and foreign exchange calculations.", 2);
+        seedSkill(subject, consumer, "6.3.3", "Interest and discounts",
+            "Interest, discount, commission, depreciation and related calculations.", 3);
+        seedSkill(subject, consumer, "6.3.4", "Tax and hire purchase",
+            "Sales/income tax, hire purchase, and bank accounts.", 4);
+
+        Topic measures = seedTopic(subject, "6.4", "Measures and Mensuration",
+            "Units, time, perimeter, area, surface area, volume, density.", 4);
+        topics.add(measures);
+        seedSkill(subject, measures, "6.4.1", "Time and units",
+            "12/24-hour time, SI units and unit conversions.", 1);
+        seedSkill(subject, measures, "6.4.2", "Perimeter and area",
+            "Rectangles, triangles, parallelograms, trapezia.", 2);
+        seedSkill(subject, measures, "6.4.3", "Circles and arcs",
+            "Circumference, arc length, sector and segment area.", 3);
+        seedSkill(subject, measures, "6.4.4", "Surface area and volume",
+            "Cylinder, cuboid, prisms, pyramid, cone, sphere.", 4);
+        seedSkill(subject, measures, "6.4.5", "Density and capacity",
+            "Density, volume and capacity in practical contexts.", 5);
+
+        Topic graphs = seedTopic(subject, "6.5", "Graphs and Variation",
+            "Coordinate graphs, variation, functional graphs and kinematics.", 5);
+        topics.add(graphs);
+        seedSkill(subject, graphs, "6.5.1", "Coordinates and graphs",
+            "Plot and interpret Cartesian graphs from data.", 1);
+        seedSkill(subject, graphs, "6.5.2", "Kinematics graphs",
+            "Displacement-time and velocity-time graphs; speed and acceleration.", 2);
+        seedSkill(subject, graphs, "6.5.3", "Variation",
+            "Direct, inverse, joint and partial variation.", 3);
+        seedSkill(subject, graphs, "6.5.4", "Functional graphs",
+            "Linear, quadratic, power functions and f(x) notation.", 4);
+        seedSkill(subject, graphs, "6.5.5", "Gradients and rates of change",
+            "Gradients, turning points, and interpreting slopes.", 5);
+        seedSkill(subject, graphs, "6.5.6", "Area under a curve",
+            "Estimate area using squares or trapezia.", 6);
+
+        Topic algebra = seedTopic(subject, "6.6", "Algebraic Concepts and Techniques",
+            "Symbolic manipulation, factorisation, indices, equations and inequalities.", 6);
+        topics.add(algebra);
+        seedSkill(subject, algebra, "6.6.1", "Symbolic expressions and formulae",
+            "Translate to algebra and substitute values.", 1);
+        seedSkill(subject, algebra, "6.6.2", "Change of subject",
+            "Rearrange formulae, including from other subjects.", 2);
+        seedSkill(subject, algebra, "6.6.3", "Algebraic manipulation",
+            "Operations, expansion and simplification.", 3);
+        seedSkill(subject, algebra, "6.6.4", "Factorisation",
+            "Factorise linear and quadratic expressions.", 4);
+        seedSkill(subject, algebra, "6.6.5", "Indices and logarithms",
+            "Laws of indices and basic logarithm rules.", 5);
+        seedSkill(subject, algebra, "6.6.6", "Equations",
+            "Linear, simultaneous, and quadratic equations.", 6);
+        seedSkill(subject, algebra, "6.6.7", "Inequalities and linear programming",
+            "Solve inequalities and interpret feasible regions.", 7);
+
+        Topic geometry = seedTopic(subject, "6.7", "Geometric Concepts and Techniques",
+            "Angles, polygons, circles, similarity, construction and loci.", 7);
+        topics.add(geometry);
+        seedSkill(subject, geometry, "6.7.1", "Points, lines and angles",
+            "Angle properties, parallel lines, elevation and depression.", 1);
+        seedSkill(subject, geometry, "6.7.2", "Bearings",
+            "Three-figure bearings and compass directions.", 2);
+        seedSkill(subject, geometry, "6.7.3", "Polygons and area properties",
+            "Triangles, quadrilaterals, regular polygons.", 3);
+        seedSkill(subject, geometry, "6.7.4", "Circles and theorems",
+            "Chord, tangent, cyclic quadrilateral and circle theorems.", 4);
+        seedSkill(subject, geometry, "6.7.5", "Similarity and congruency",
+            "Similar figures and congruent triangles.", 5);
+        seedSkill(subject, geometry, "6.7.6", "Constructions",
+            "Angles, triangles, polygons and scale drawings.", 6);
+        seedSkill(subject, geometry, "6.7.7", "Loci",
+            "Loci in two dimensions using ruler and compass.", 7);
+        seedSkill(subject, geometry, "6.7.8", "Symmetry",
+            "Line and rotational symmetry of plane figures.", 8);
+
+        Topic trig = seedTopic(subject, "6.8", "Trigonometry",
+            "Pythagoras, trig ratios, and triangle area rules.", 8);
+        topics.add(trig);
+        seedSkill(subject, trig, "6.8.1", "Pythagoras and trig ratios",
+            "Apply Pythagoras, sine, cosine, tangent in right triangles.", 1);
+        seedSkill(subject, trig, "6.8.2", "Area of a triangle",
+            "Use area = 1/2 ab sin C.", 2);
+        seedSkill(subject, trig, "6.8.3", "Sine and cosine rules",
+            "Solve non-right triangles using sine/cosine rules.", 3);
+        seedSkill(subject, trig, "6.8.4", "3D trigonometry",
+            "Solve 3D problems involving angles between lines and planes.", 4);
+
+        Topic vectors = seedTopic(subject, "6.9", "Vectors and Matrices",
+            "Vector notation and matrix operations in 2D.", 9);
+        topics.add(vectors);
+        seedSkill(subject, vectors, "6.9.1", "Vectors in two dimensions",
+            "Translation, notation and representation.", 1);
+        seedSkill(subject, vectors, "6.9.2", "Vector operations",
+            "Addition, subtraction, scalar multiplication and magnitude.", 2);
+        seedSkill(subject, vectors, "6.9.3", "Position and parallel vectors",
+            "Identify position, equal and parallel vectors.", 3);
+        seedSkill(subject, vectors, "6.9.4", "Matrices basics",
+            "Order, addition, subtraction and scalar multiplication.", 4);
+        seedSkill(subject, vectors, "6.9.5", "Matrix operations",
+            "Multiplication, identity, determinant and inverse (2x2).", 5);
+
+        Topic transforms = seedTopic(subject, "6.10", "Transformations",
+            "Translation, reflection, rotation, enlargement, stretch and shear.", 10);
+        topics.add(transforms);
+        seedSkill(subject, transforms, "6.10.1", "Basic transformations",
+            "Translation, reflection, rotation and enlargement.", 1);
+        seedSkill(subject, transforms, "6.10.2", "Stretch and shear",
+            "One-way and two-way stretch, shear with invariant lines.", 2);
+        seedSkill(subject, transforms, "6.10.3", "Combined transformations",
+            "Compose transformations and describe fully.", 3);
+        seedSkill(subject, transforms, "6.10.4", "Matrices as operators",
+            "Use matrices to represent transformations.", 4);
+
+        Topic stats = seedTopic(subject, "6.11", "Statistics and Probability",
+            "Data handling and probability concepts.", 11);
+        topics.add(stats);
+        seedSkill(subject, stats, "6.11.1", "Collection and classification",
+            "Collect, classify and tabulate data.", 1);
+        seedSkill(subject, stats, "6.11.2", "Data representation",
+            "Charts, histograms, frequency tables and polygons.", 2);
+        seedSkill(subject, stats, "6.11.3", "Measures of central tendency",
+            "Mean, median, mode and use of assumed mean.", 3);
+        seedSkill(subject, stats, "6.11.4", "Cumulative frequency",
+            "Cumulative frequency curves/ogives and interpretation.", 4);
+        seedSkill(subject, stats, "6.11.5", "Probability terms",
+            "Random, certain, impossible, events and sample space.", 5);
+        seedSkill(subject, stats, "6.11.6", "Probability calculations",
+            "Single and combined events; tree diagrams/outcome tables.", 6);
+
+        return topics;
+    }
+
+    private void seedTermForecast(
+        ClassSubject classSubject,
+        User teacher,
+        String term,
+        String academicYear,
+        double expectedCoverage,
+        List<java.util.UUID> topicIds,
+        String notes
+    ) {
+        if (classSubject == null) {
+            return;
+        }
+        if (termForecastRepository
+            .findByClassSubject_IdAndTermAndAcademicYearAndDeletedAtIsNull(classSubject.getId(), term, academicYear)
+            .isPresent()) {
+            return;
+        }
+        TermForecast forecast = new TermForecast();
+        forecast.setClassSubject(classSubject);
+        forecast.setTerm(term);
+        forecast.setAcademicYear(academicYear);
+        forecast.setExpectedCoveragePct(expectedCoverage);
+        JsonNode topicIdsJson = objectMapper.valueToTree(topicIds);
+        forecast.setExpectedTopicIds(topicIdsJson);
+        forecast.setNotes(notes);
+        forecast.setCreatedBy(teacher);
+        termForecastRepository.save(forecast);
+    }
+
+    private ClassSubject seedClassSubject(
+        School school,
+        ClassEntity classEntity,
+        Subject subject,
+        User teacher,
+        String academicYear,
+        String term
+    ) {
+        if (school == null || classEntity == null || subject == null) {
+            return null;
+        }
+        return classSubjectRepository.findByClassEntity_IdAndDeletedAtIsNull(classEntity.getId()).stream()
+            .filter(link -> link.getSubject() != null && link.getSubject().getId().equals(subject.getId()))
+            .findFirst()
+            .orElseGet(() -> {
+                ClassSubject classSubject = new ClassSubject();
+                classSubject.setSchool(school);
+                classSubject.setClassEntity(classEntity);
+                classSubject.setSubject(subject);
+                classSubject.setTeacher(teacher);
+                classSubject.setAcademicYear(academicYear);
+                classSubject.setTerm(term);
+                classSubject.setName(subject.getName());
+                classSubject.setActive(true);
+                return classSubjectRepository.save(classSubject);
+            });
+    }
+
+    private void seedStudentSubjectEnrolment(User student, ClassSubject classSubject) {
+        if (student == null || classSubject == null) {
+            return;
+        }
+        boolean exists = studentSubjectEnrolmentRepository
+            .findByStudent_IdAndDeletedAtIsNull(student.getId())
+            .stream()
+            .anyMatch(enrolment -> enrolment.getClassSubject() != null
+                && enrolment.getClassSubject().getId().equals(classSubject.getId()));
+        if (exists) {
+            return;
+        }
+        StudentSubjectEnrolment enrolment = new StudentSubjectEnrolment();
+        enrolment.setStudent(student);
+        enrolment.setClassSubject(classSubject);
+        enrolment.setStatusCode("active");
+        studentSubjectEnrolmentRepository.save(enrolment);
+    }
+
+    private void seedDefaultStudentPlansForExistingSubjectEnrolments() {
+        for (StudentSubjectEnrolment enrolment : studentSubjectEnrolmentRepository.findByDeletedAtIsNull()) {
+            if (enrolment.getStudent() == null || enrolment.getClassSubject() == null || enrolment.getClassSubject().getSubject() == null) {
+                continue;
+            }
+
+            User student = enrolment.getStudent();
+            Subject subject = enrolment.getClassSubject().getSubject();
+            if (!studentPlanRepository.findByStudent_IdAndSubject_IdAndDeletedAtIsNullOrderByCreatedAtDesc(student.getId(), subject.getId()).isEmpty()) {
+                continue;
+            }
+
+            Plan plan = new Plan();
+            plan.setSubject(subject);
+            plan.setName(buildStarterPlanName(student, subject));
+            plan.setDescription("Starter development plan for " + buildStudentName(student) + " in " + buildSubjectName(subject) + ".");
+            plan.setProgress(0.0);
+            plan.setPotentialOverall(70.0);
+            plan.setEtaDays(14);
+            plan.setPerformance("Tracking");
+            Plan savedPlan = planRepository.save(plan);
+
+            StudentPlan studentPlan = new StudentPlan();
+            studentPlan.setStudent(student);
+            studentPlan.setPlan(savedPlan);
+            studentPlan.setSubject(subject);
+            studentPlan.setCurrentProgress(0.0);
+            studentPlan.setStatus("on_hold");
+            studentPlan.setCurrent(false);
+            studentPlanRepository.save(studentPlan);
+        }
+    }
+
+    private String buildStarterPlanName(User student, Subject subject) {
+        return buildStudentName(student) + " " + buildSubjectName(subject) + " Development Plan";
+    }
+
+    private String buildStudentName(User student) {
+        String fullName = ((student.getFirstName() == null ? "" : student.getFirstName().trim()) + " "
+            + (student.getLastName() == null ? "" : student.getLastName().trim())).trim();
+        if (!fullName.isBlank()) {
+            return fullName;
+        }
+        if (student.getUsername() != null && !student.getUsername().isBlank()) {
+            return student.getUsername().trim();
+        }
+        return "Student";
+    }
+
+    private String buildSubjectName(Subject subject) {
+        if (subject.getName() != null && !subject.getName().isBlank()) {
+            return subject.getName().trim();
+        }
+        if (subject.getCode() != null && !subject.getCode().isBlank()) {
+            return subject.getCode().trim();
+        }
+        return "Subject";
+    }
+
+    private void seedClassEnrolment(User student, ClassEntity classEntity) {
+        if (student == null || classEntity == null) {
+            return;
+        }
+        if (enrolmentRepository.findByClassEntity_IdAndStudent_Id(classEntity.getId(), student.getId()).isPresent()) {
+            return;
+        }
+        Enrolment enrolment = new Enrolment();
+        enrolment.setClassEntity(classEntity);
+        enrolment.setStudent(student);
+        enrolment.setEnrolmentStatusCode("active");
+        enrolmentRepository.save(enrolment);
+    }
+
+    private void seedStudentAttribute(User student, Skill skill, double current, double potential) {
+        if (studentAttributeRepository.findByStudent_IdAndSkill_Id(student.getId(), skill.getId()).isPresent()) {
+            return;
+        }
+        StudentAttribute attribute = new StudentAttribute();
+        attribute.setStudent(student);
+        attribute.setSkill(skill);
+        attribute.setCurrentScore(current);
+        attribute.setPotentialScore(potential);
+        attribute.setLastAssessed(java.time.Instant.now());
+        studentAttributeRepository.save(attribute);
+    }
+
+    private PlanSkill seedPlanSkill(Plan plan, String name, Double score) {
+        PlanSkill planSkill = new PlanSkill();
+        planSkill.setPlan(plan);
+        planSkill.setName(name);
+        planSkill.setScore(score);
+        return planSkillRepository.save(planSkill);
+    }
+
+    private void seedPlanSubskill(PlanSkill planSkill, String name, Double score, String color) {
+        PlanSubskill subskill = new PlanSubskill();
+        subskill.setPlanSkill(planSkill);
+        subskill.setName(name);
+        subskill.setScore(score);
+        subskill.setColor(color);
+        planSubskillRepository.save(subskill);
+    }
+
+    private void seedPlanStep(Plan plan, String title, String type, int order, String link) {
+        PlanStep step = new PlanStep();
+        step.setPlan(plan);
+        step.setTitle(title);
+        step.setStepType(normalizePlanStepType(type));
+        step.setStepOrder(order);
+        step.setLink(link);
+        planStepRepository.save(step);
+    }
+
+    private void seedStudentPlan(User student, Plan plan, Subject subject) {
+        if (studentPlanRepository.findFirstByStudent_IdAndSubject_IdAndCurrentTrue(student.getId(), subject.getId()).isPresent()) {
+            return;
+        }
+        StudentPlan studentPlan = new StudentPlan();
+        studentPlan.setStudent(student);
+        studentPlan.setPlan(plan);
+        studentPlan.setSubject(subject);
+        studentPlan.setStartDate(java.time.Instant.now());
+        studentPlan.setCurrentProgress(10.0);
+        studentPlan.setStatus("active");
+        studentPlan.setCurrent(true);
+        studentPlanRepository.save(studentPlan);
+    }
+
+    private void seedChatData(School school, User teacher, User student) {
+        if (school == null || teacher == null || student == null) {
+            return;
+        }
+
+        Chat existingChat = chatMemberRepository.findByUser_Id(student.getId()).stream()
+            .map(ChatMember::getChat)
+            .filter(chat -> chat != null && "direct".equalsIgnoreCase(chat.getChatType()))
+            .filter(chat -> chatMemberRepository.findByChat_Id(chat.getId()).stream()
+                .anyMatch(member -> member.getUser() != null && member.getUser().getId().equals(teacher.getId())))
+            .findFirst()
+            .orElse(null);
+
+        Chat chat = existingChat;
+        if (chat == null) {
+            chat = new Chat();
+            chat.setSchool(school);
+            chat.setChatType("direct");
+            chat.setTitle("Student Chat");
+            chat = chatRepository.save(chat);
+
+            ChatMember studentMember = new ChatMember();
+            studentMember.setChat(chat);
+            studentMember.setUser(student);
+            studentMember.setRole("member");
+            chatMemberRepository.save(studentMember);
+
+            ChatMember teacherMember = new ChatMember();
+            teacherMember.setChat(chat);
+            teacherMember.setUser(teacher);
+            teacherMember.setRole("admin");
+            chatMemberRepository.save(teacherMember);
+        }
+
+        if (messageRepository.findByChatIdOrderByTsAsc(chat.getId()).isEmpty()) {
+            seedMessage(school, chat, student, "Good day sir, I can't see my assignment on the portal.", 120);
+            seedMessage(school, chat, teacher, "Thanks for letting me know. I'll check and update it.", 90);
+            seedMessage(school, chat, student, "Appreciate it. Please let me know when it's fixed.", 60);
+        }
+    }
+
+    private void seedMessage(School school, Chat chat, User sender, String content, int minutesAgo) {
+        Message message = new Message();
+        message.setSchool(school);
+        message.setChat(chat);
+        message.setSender(sender);
+        message.setContent(content);
+        message.setTs(java.time.Instant.now().minusSeconds(minutesAgo * 60L));
+        message.setRead(minutesAgo > 90);
+        messageRepository.save(message);
+    }
+
+    private void seedAssessmentData(
+        School school,
+        User teacher,
+        User student,
+        ClassEntity classEntity,
+        Subject subject,
+        ClassSubject classSubject
+    ) {
+        if (school == null || teacher == null || student == null || subject == null) {
+            return;
+        }
+
+        Assessment quiz = seedAssessment(school, subject, teacher, "Weekly Quiz", "Quick check on recent topics", "quiz", 30.0, 10.0);
+        Assessment test = seedAssessment(school, subject, teacher, "Topic Test", "Assessment of module understanding", "test", 50.0, 20.0);
+
+        AssessmentAssignment quizAssignment = seedAssessmentAssignment(quiz, classEntity, teacher, "Weekly Quiz", "Complete the quiz", 7);
+        AssessmentAssignment testAssignment = seedAssessmentAssignment(test, classEntity, teacher, "Topic Test", "Answer all sections", 14);
+
+        seedAssessmentResult(quizAssignment, student, 18.0, 24.0, "B+", "Good understanding overall.");
+        seedAssessmentResult(testAssignment, student, 30.0, 40.0, "A-", "Strong performance, keep it up.");
+    }
+
+    private Assessment seedAssessment(
+        School school,
+        Subject subject,
+        User teacher,
+        String name,
+        String description,
+        String type,
+        double maxScore,
+        double weightPct
+    ) {
+        Assessment existing = assessmentRepository.findAll().stream()
+            .filter(assessment -> assessment.getSubject() != null
+                && assessment.getSubject().getId().equals(subject.getId())
+                && assessment.getName() != null
+                && assessment.getName().equalsIgnoreCase(name))
+            .findFirst()
+            .orElse(null);
+        if (existing != null) {
+            return existing;
+        }
+
+        Assessment assessment = new Assessment();
+        assessment.setSchool(school);
+        assessment.setSubject(subject);
+        assessment.setName(name);
+        assessment.setDescription(description);
+        assessment.setAssessmentType(type);
+        assessment.setVisibility("private");
+        assessment.setMaxScore(maxScore);
+        assessment.setWeightPct(weightPct);
+        assessment.setAiEnhanced(false);
+        assessment.setStatus("published");
+        assessment.setCreatedBy(teacher);
+        assessment.setLastModifiedBy(teacher);
+        return assessmentRepository.save(assessment);
+    }
+
+    private AssessmentAssignment seedAssessmentAssignment(
+        Assessment assessment,
+        ClassEntity classEntity,
+        User teacher,
+        String title,
+        String instructions,
+        int dueDays
+    ) {
+        if (assessment == null) {
+            return null;
+        }
+        List<AssessmentAssignment> existing = assessmentAssignmentRepository.findByAssessment_Id(assessment.getId());
+        if (!existing.isEmpty()) {
+            return existing.get(0);
+        }
+        AssessmentAssignment assignment = new AssessmentAssignment();
+        assignment.setAssessment(assessment);
+        assignment.setClassEntity(classEntity);
+        assignment.setAssignedBy(teacher);
+        assignment.setTitle(title);
+        assignment.setInstructions(instructions);
+        assignment.setStartTime(java.time.Instant.now().minusSeconds(3 * 24L * 3600L));
+        assignment.setDueTime(java.time.Instant.now().plusSeconds(dueDays * 24L * 3600L));
+        assignment.setPublished(true);
+        return assessmentAssignmentRepository.save(assignment);
+    }
+
+    private void seedAssessmentResult(
+        AssessmentAssignment assignment,
+        User student,
+        double expected,
+        double actual,
+        String grade,
+        String feedback
+    ) {
+        if (assignment == null || student == null) {
+            return;
+        }
+        if (assessmentResultRepository
+            .findFirstByAssessmentAssignment_IdAndStudent_Id(assignment.getId(), student.getId())
+            .isPresent()) {
+            return;
+        }
+        AssessmentResult result = new AssessmentResult();
+        result.setAssessmentAssignment(assignment);
+        result.setStudent(student);
+        result.setExpectedMark(expected);
+        result.setActualMark(actual);
+        result.setGrade(grade);
+        result.setFeedback(feedback);
+        result.setSubmittedAt(java.time.Instant.now().minusSeconds(1 * 24L * 3600L));
+        result.setGradedAt(java.time.Instant.now().minusSeconds(12 * 3600L));
+        result.setStatus("published");
+        assessmentResultRepository.save(result);
+    }
+
+    private String normalizePlanStepType(String value) {
+        if (value == null || value.isBlank()) {
+            return "document";
+        }
+        String normalized = value.trim().toLowerCase();
+        return switch (normalized) {
+            case "video", "document", "assessment", "discussion" -> normalized;
+            case "reading", "resource", "notes" -> "document";
+            case "exercise", "practice", "quiz", "assignment", "test" -> "assessment";
+            case "meeting", "collaboration", "group" -> "discussion";
+            default -> "document";
+        };
+    }
+
+
+    private void seedEnrolmentStatuses() {
+        jdbcTemplate.update(
+            "INSERT INTO lookups.enrolment_status (code, name) VALUES ('active', 'Active') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.enrolment_status (code, name) VALUES ('dropped', 'Dropped') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.enrolment_status (code, name) VALUES ('completed', 'Completed') ON CONFLICT (code) DO NOTHING");
+    }
+
+    private void seedExamBoards() {
+        jdbcTemplate.update(
+            "INSERT INTO lookups.exam_board (code, name) VALUES ('zimsec', 'ZIMSEC') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.exam_board (code, name) VALUES ('cambridge', 'CAMBRIDGE') ON CONFLICT (code) DO NOTHING");
+    }
+
+    private void seedAssessmentEnrollmentStatuses() {
+        jdbcTemplate.update(
+            "INSERT INTO lookups.assessment_enrollment_status (code, name) VALUES ('assigned', 'Assigned') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.assessment_enrollment_status (code, name) VALUES ('completed', 'Completed') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.assessment_enrollment_status (code, name) VALUES ('late', 'Late') ON CONFLICT (code) DO NOTHING");
+    }
+
+    private void seedGradingStatuses() {
+        jdbcTemplate.update(
+            "INSERT INTO lookups.grading_status (code, name) VALUES ('pending', 'Pending') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.grading_status (code, name) VALUES ('auto_graded', 'Auto Graded') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.grading_status (code, name) VALUES ('reviewed', 'Reviewed') ON CONFLICT (code) DO NOTHING");
+    }
+
+    private void seedQuestionTypes() {
+        jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('short_answer', 'Short Answer') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('structured', 'Structured') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('mcq', 'Multiple Choice') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('true_false', 'True/False') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('essay', 'Essay') ON CONFLICT (code) DO NOTHING");
+    }
+}

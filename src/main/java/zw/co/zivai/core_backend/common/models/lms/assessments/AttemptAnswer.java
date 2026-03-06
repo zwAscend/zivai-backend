@@ -1,0 +1,92 @@
+package zw.co.zivai.core_backend.common.models.lms.assessments;
+
+import java.time.Instant;
+
+import com.fasterxml.jackson.databind.JsonNode;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import lombok.Getter;
+import lombok.Setter;
+import zw.co.zivai.core_backend.common.models.base.BaseEntity;
+import zw.co.zivai.core_backend.common.models.lms.resources.Resource;
+
+@Getter
+@Setter
+@Entity
+@Table(name = "attempt_answers", schema = "lms")
+public class AttemptAnswer extends BaseEntity {
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "assessment_attempt_id")
+    private AssessmentAttempt assessmentAttempt;
+
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "assessment_question_id")
+    private AssessmentQuestion assessmentQuestion;
+
+    @Column(name = "student_answer_text")
+    private String studentAnswerText;
+
+    @Column(name = "student_answer_blob")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode studentAnswerBlob;
+
+    @Column(name = "submission_type")
+    private String submissionType;
+
+    @Column(name = "text_content")
+    private String textContent;
+
+    @Column(name = "external_assessment_data")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode externalAssessmentData;
+
+    @ManyToOne
+    @JoinColumn(name = "handwriting_resource_id")
+    private Resource handwritingResource;
+
+    @Column(name = "ocr_text")
+    private String ocrText;
+
+    @Column(name = "ocr_confidence")
+    private Double ocrConfidence;
+
+    @Column(name = "ocr_engine")
+    private String ocrEngine;
+
+    @Column(name = "ocr_language")
+    private String ocrLanguage;
+
+    @Column(name = "ocr_metadata")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode ocrMetadata;
+
+    @Column(name = "ai_score")
+    private Double aiScore;
+
+    @Column(name = "human_score")
+    private Double humanScore;
+
+    @Column(name = "max_score", nullable = false)
+    private Double maxScore;
+
+    @Column(name = "ai_confidence")
+    private Double aiConfidence;
+
+    @Column(name = "requires_review", nullable = false)
+    private boolean requiresReview = false;
+
+    @Column(name = "feedback_text")
+    private String feedbackText;
+
+    @Column(name = "graded_at")
+    private Instant gradedAt;
+
+    @Column(name = "answer_trace_id")
+    private String answerTraceId;
+}

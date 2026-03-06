@@ -1,0 +1,13 @@
+package zw.co.zivai.core_backend.common.repositories.development;
+
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import zw.co.zivai.core_backend.common.models.lms.development.PlanSkill;
+
+public interface PlanSkillRepository extends JpaRepository<PlanSkill, UUID> {
+    List<PlanSkill> findByPlan_Id(UUID planId);
+    List<PlanSkill> findByPlan_IdIn(List<UUID> planIds);
+}

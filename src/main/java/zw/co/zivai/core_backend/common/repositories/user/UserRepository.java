@@ -1,0 +1,23 @@
+package zw.co.zivai.core_backend.common.repositories.user;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import zw.co.zivai.core_backend.common.models.lms.users.User;
+
+public interface UserRepository extends JpaRepository<User, UUID> {
+    Optional<User> findByEmail(String email);
+    List<User> findByRoles_Code(String code);
+    Optional<User> findByEmailAndDeletedAtIsNull(String email);
+    Optional<User> findFirstByDeletedAtIsNullOrderByCreatedAtAsc();
+    List<User> findByRoles_CodeAndDeletedAtIsNull(String code);
+    List<User> findAllByDeletedAtIsNull();
+    List<User> findByIdInAndDeletedAtIsNull(List<UUID> ids);
+    Optional<User> findByIdAndDeletedAtIsNull(UUID id);
+    long countByDeletedAtIsNull();
+    long countByDeletedAtIsNullAndActiveTrue();
+    long countByDeletedAtIsNullAndRoles_Code(String code);
+}
