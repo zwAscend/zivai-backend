@@ -23,29 +23,29 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.transaction.Transactional;
-import zw.co.zivai.core_backend.models.lms.development.Plan;
-import zw.co.zivai.core_backend.models.lms.development.PlanStep;
-import zw.co.zivai.core_backend.models.lms.classroom.ClassEntity;
-import zw.co.zivai.core_backend.models.lms.classroom.ClassSubject;
-import zw.co.zivai.core_backend.models.lms.school.School;
-import zw.co.zivai.core_backend.models.lms.students.StudentPlan;
-import zw.co.zivai.core_backend.models.lms.students.StudentSubjectEnrolment;
-import zw.co.zivai.core_backend.models.lms.subjects.Subject;
-import zw.co.zivai.core_backend.models.lms.users.User;
-import zw.co.zivai.core_backend.repositories.classroom.ClassRepository;
-import zw.co.zivai.core_backend.repositories.classroom.ClassSubjectRepository;
-import zw.co.zivai.core_backend.repositories.classroom.StudentSubjectEnrolmentRepository;
-import zw.co.zivai.core_backend.repositories.development.PlanRepository;
-import zw.co.zivai.core_backend.repositories.development.PlanStepRepository;
-import zw.co.zivai.core_backend.repositories.development.StudentPlanRepository;
-import zw.co.zivai.core_backend.repositories.school.SchoolRepository;
-import zw.co.zivai.core_backend.repositories.subject.SubjectRepository;
-import zw.co.zivai.core_backend.repositories.user.UserRepository;
+import zw.co.zivai.core_backend.common.models.lms.development.Plan;
+import zw.co.zivai.core_backend.common.models.lms.development.PlanStep;
+import zw.co.zivai.core_backend.common.models.lms.classroom.ClassEntity;
+import zw.co.zivai.core_backend.common.models.lms.classroom.ClassSubject;
+import zw.co.zivai.core_backend.common.models.lms.school.School;
+import zw.co.zivai.core_backend.common.models.lms.students.StudentPlan;
+import zw.co.zivai.core_backend.common.models.lms.students.StudentSubjectEnrolment;
+import zw.co.zivai.core_backend.common.models.lms.subjects.Subject;
+import zw.co.zivai.core_backend.common.models.lms.users.User;
+import zw.co.zivai.core_backend.common.repositories.classroom.ClassRepository;
+import zw.co.zivai.core_backend.common.repositories.classroom.ClassSubjectRepository;
+import zw.co.zivai.core_backend.common.repositories.classroom.StudentSubjectEnrolmentRepository;
+import zw.co.zivai.core_backend.common.repositories.development.PlanRepository;
+import zw.co.zivai.core_backend.common.repositories.development.PlanStepRepository;
+import zw.co.zivai.core_backend.common.repositories.development.StudentPlanRepository;
+import zw.co.zivai.core_backend.common.repositories.school.SchoolRepository;
+import zw.co.zivai.core_backend.common.repositories.subject.SubjectRepository;
+import zw.co.zivai.core_backend.common.repositories.user.UserRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class DevelopmentControllerIntegrationTest {
+class DevelopmentControllerIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

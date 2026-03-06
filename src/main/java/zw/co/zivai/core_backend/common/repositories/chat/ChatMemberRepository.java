@@ -1,0 +1,14 @@
+package zw.co.zivai.core_backend.common.repositories.chat;
+
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import zw.co.zivai.core_backend.common.models.lms.chat.ChatMember;
+import zw.co.zivai.core_backend.common.models.lms.chat.ChatMember.ChatMemberId;
+
+public interface ChatMemberRepository extends JpaRepository<ChatMember, ChatMemberId> {
+    List<ChatMember> findByUser_Id(UUID userId);
+    List<ChatMember> findByChat_Id(UUID chatId);
+}

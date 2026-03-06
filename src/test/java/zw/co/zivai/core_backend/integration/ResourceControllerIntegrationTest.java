@@ -17,21 +17,21 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import jakarta.transaction.Transactional;
-import zw.co.zivai.core_backend.models.lms.resources.Resource;
-import zw.co.zivai.core_backend.models.lms.school.School;
-import zw.co.zivai.core_backend.models.lms.subjects.Subject;
-import zw.co.zivai.core_backend.models.lms.resources.Topic;
-import zw.co.zivai.core_backend.models.lms.users.User;
-import zw.co.zivai.core_backend.repositories.resource.ResourceRepository;
-import zw.co.zivai.core_backend.repositories.school.SchoolRepository;
-import zw.co.zivai.core_backend.repositories.subject.SubjectRepository;
-import zw.co.zivai.core_backend.repositories.subject.TopicRepository;
-import zw.co.zivai.core_backend.repositories.user.UserRepository;
+import zw.co.zivai.core_backend.common.models.lms.resources.Resource;
+import zw.co.zivai.core_backend.common.models.lms.school.School;
+import zw.co.zivai.core_backend.common.models.lms.subjects.Subject;
+import zw.co.zivai.core_backend.common.models.lms.resources.Topic;
+import zw.co.zivai.core_backend.common.models.lms.users.User;
+import zw.co.zivai.core_backend.common.repositories.resource.ResourceRepository;
+import zw.co.zivai.core_backend.common.repositories.school.SchoolRepository;
+import zw.co.zivai.core_backend.common.repositories.subject.SubjectRepository;
+import zw.co.zivai.core_backend.common.repositories.subject.TopicRepository;
+import zw.co.zivai.core_backend.common.repositories.user.UserRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class ResourceControllerIntegrationTest {
+class ResourceControllerIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

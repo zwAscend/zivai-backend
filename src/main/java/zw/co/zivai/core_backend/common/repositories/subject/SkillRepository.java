@@ -1,0 +1,16 @@
+package zw.co.zivai.core_backend.common.repositories.subject;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import zw.co.zivai.core_backend.common.models.lms.development.Skill;
+
+public interface SkillRepository extends JpaRepository<Skill, UUID> {
+    List<Skill> findBySubject_Id(UUID subjectId);
+    List<Skill> findBySubject_IdIn(List<UUID> subjectIds);
+    Optional<Skill> findBySubject_IdAndCode(UUID subjectId, String code);
+    Optional<Skill> findBySubject_IdAndNameIgnoreCase(UUID subjectId, String name);
+}
