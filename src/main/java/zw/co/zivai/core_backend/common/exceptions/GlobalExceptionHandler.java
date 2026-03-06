@@ -43,6 +43,18 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Database operation failed.");
     }
 
+    @ExceptionHandler(UpstreamServiceTimeoutException.class)
+    public ResponseEntity<ErrorResponse> handleUpstreamTimeout(UpstreamServiceTimeoutException ex) {
+        LOG.error("Upstream service timeout", ex);
+        return buildResponse(HttpStatus.GATEWAY_TIMEOUT, ex.getMessage());
+    }
+
+    @ExceptionHandler(UpstreamServiceUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleUpstreamUnavailable(UpstreamServiceUnavailableException ex) {
+        LOG.error("Upstream service unavailable", ex);
+        return buildResponse(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
         LOG.error("Unhandled exception", ex);
