@@ -77,6 +77,36 @@ You can configure database access using environment variables (recommended for l
 - `ZIVAI_DB_PASSWORD` (default: empty)
   - Fallbacks also supported for password: `SPRING_DATASOURCE_PASSWORD`, then `PGPASSWORD`
 
+You can also configure Huawei OCR via environment variables:
+
+- `HWC_AK`
+- `HWC_SK`
+- `HWC_PROJECT_ID`
+- `HWC_OCR_ENDPOINT` (default: `https://ocr.ap-southeast-1.myhuaweicloud.com`)
+- `HWC_HOST` (default: `ocr.ap-southeast-1.myhuaweicloud.com`)
+- `HWC_FORCE_TRAILING_SLASH` (default: `false`)
+- `HWC_HTTP_TIMEOUT_SECONDS` (default: `180`)
+
+General-text OCR tuning (optional):
+
+- `HWC_GENERAL_TEXT_DETECT_DIRECTION`
+- `HWC_GENERAL_TEXT_QUICK_MODE`
+- `HWC_GENERAL_TEXT_MAX_ORIGINAL_FILE_SIZE_BYTES`
+- `HWC_GENERAL_TEXT_MAX_ENCODED_IMAGE_BYTES`
+- `HWC_GENERAL_TEXT_MAX_IMAGE_WIDTH`
+- `HWC_GENERAL_TEXT_MAX_IMAGE_HEIGHT`
+- `HWC_GENERAL_TEXT_JPEG_QUALITY`
+- `HWC_GENERAL_TEXT_MIN_JPEG_QUALITY`
+- `HWC_GENERAL_TEXT_ADAPTIVE_RESIZE_PERCENT`
+- `HWC_GENERAL_TEXT_MAX_ADAPTIVE_PASSES`
+- `HWC_GENERAL_TEXT_TIMEOUT_RETRIES`
+- `HWC_GENERAL_TEXT_RETRY_BACKOFF_MS`
+- `HWC_GENERAL_TEXT_RASTER_OUTPUT_FORMAT`
+- `HWC_GENERAL_TEXT_PDF_RENDER_DPI`
+- `HWC_GENERAL_TEXT_MAX_PDF_PAGES`
+- `HWC_GENERAL_TEXT_PDF_RENDER_IMAGE_FORMAT`
+- `HWC_GENERAL_TEXT_ALLOWED_FORMATS`
+
 ### Quick setup (local dev)
 1) **Create a local database** (PostgreSQL example):
 ```bash
