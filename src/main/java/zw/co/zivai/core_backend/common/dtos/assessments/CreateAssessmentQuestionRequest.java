@@ -1,6 +1,5 @@
 package zw.co.zivai.core_backend.common.dtos.assessments;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
 
 @Data
@@ -9,7 +8,7 @@ public class CreateAssessmentQuestionRequest {
     private String questionTypeCode;
     private Double maxMark;
     private Integer difficulty;
-    private JsonNode rubricJson;
+    private Object rubricJson;
     private Integer sequenceIndex;
     private Double points;
 }

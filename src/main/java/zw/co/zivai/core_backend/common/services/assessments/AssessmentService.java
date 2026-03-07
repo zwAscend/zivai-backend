@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
@@ -33,6 +35,8 @@ import zw.co.zivai.core_backend.common.repositories.user.UserRepository;
 @Service
 @RequiredArgsConstructor
 public class AssessmentService {
+    private static final ObjectMapper RUBRIC_JSON_MAPPER = new ObjectMapper();
+
     private final AssessmentRepository assessmentRepository;
     private final SchoolRepository schoolRepository;
     private final SubjectRepository subjectRepository;
@@ -239,7 +243,7 @@ public class AssessmentService {
                     .questionTypeCode(question.getQuestionTypeCode())
                     .maxMark(question.getMaxMark())
                     .difficulty(question.getDifficulty() != null ? question.getDifficulty().intValue() : null)
-                    .rubricJson(question.getRubricJson())
+                    .rubricJson(fromRubricJson(question.getRubricJson()))
                     .sequenceIndex(assessmentQuestion.getSequenceIndex())
                     .points(assessmentQuestion.getPoints())
                     .build();
@@ -315,8 +319,36 @@ public class AssessmentService {
         if (questionRequest.getDifficulty() != null) {
             question.setDifficulty(questionRequest.getDifficulty().shortValue());
         }
-        question.setRubricJson(questionRequest.getRubricJson());
+        question.setRubricJson(toRubricJson(questionRequest.getRubricJson()));
         return question;
+    }
+
+    private JsonNode toRubricJson(Object rubricJson) {
+        if (rubricJson == null) {
+            return null;
+        }
+        if (rubricJson instanceof JsonNode node) {
+            return node;
+        }
+        if (rubricJson instanceof String raw) {
+            String trimmed = raw.trim();
+            if (trimmed.isEmpty()) {
+                return null;
+            }
+            try {
+                return RUBRIC_JSON_MAPPER.readTree(trimmed);
+            } catch (Exception ex) {
+                throw new BadRequestException("Invalid rubricJson payload.");
+            }
+        }
+        return RUBRIC_JSON_MAPPER.valueToTree(rubricJson);
+    }
+
+    private Object fromRubricJson(JsonNode rubricJson) {
+        if (rubricJson == null || rubricJson.isNull()) {
+            return null;
+        }
+        return RUBRIC_JSON_MAPPER.convertValue(rubricJson, Object.class);
     }
 
     private void validateQuestionRequest(CreateAssessmentQuestionRequest questionRequest) {

@@ -12,6 +12,7 @@ import java.util.UUID;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +31,8 @@ import zw.co.zivai.core_backend.common.repositories.user.UserRepository;
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
+    private static final String FALLBACK_NOTIF_TYPE = "message_received";
+
     private final NotificationRepository notificationRepository;
     private final SchoolRepository schoolRepository;
     private final UserRepository userRepository;
@@ -44,7 +47,7 @@ public class NotificationService {
         Notification notification = new Notification();
         notification.setSchool(school);
         notification.setRecipient(recipient);
-        notification.setNotifType(request.getNotifType());
+        notification.setNotifType(normalizeNotifType(request.getNotifType()));
         notification.setTitle(request.getTitle());
         notification.setMessage(request.getMessage());
         notification.setData(request.getData() == null ? null : objectMapper.valueToTree(request.getData()));
@@ -53,7 +56,7 @@ public class NotificationService {
         notification.setPriority(request.getPriority());
         notification.setExpiresAt(request.getExpiresAt());
 
-        return notificationRepository.save(notification);
+        return saveWithNotifTypeFallback(notification);
     }
 
     public List<Notification> createBulk(UUID schoolId,
@@ -90,7 +93,7 @@ public class NotificationService {
             Notification notification = new Notification();
             notification.setSchool(school);
             notification.setRecipient(recipient);
-            notification.setNotifType(notifType);
+            notification.setNotifType(normalizeNotifType(notifType));
             notification.setTitle(title);
             notification.setMessage(message);
             notification.setData(data == null ? null : objectMapper.valueToTree(data));
@@ -102,7 +105,7 @@ public class NotificationService {
         if (notifications.isEmpty()) {
             return List.of();
         }
-        return notificationRepository.saveAll(notifications);
+        return saveBulkWithNotifTypeFallback(notifications);
     }
 
     public List<Notification> list() {
@@ -148,6 +151,63 @@ public class NotificationService {
         }
         String trimmed = value.trim();
         return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private String normalizeNotifType(String notifType) {
+        if (notifType == null || notifType.isBlank()) {
+            return FALLBACK_NOTIF_TYPE;
+        }
+        return notifType.trim();
+    }
+
+    private Notification saveWithNotifTypeFallback(Notification notification) {
+        try {
+            return notificationRepository.save(notification);
+        } catch (DataIntegrityViolationException ex) {
+            if (!isNotifTypeConstraintViolation(ex)
+                || FALLBACK_NOTIF_TYPE.equalsIgnoreCase(notification.getNotifType())) {
+                throw ex;
+            }
+            notification.setNotifType(FALLBACK_NOTIF_TYPE);
+            return notificationRepository.save(notification);
+        }
+    }
+
+    private List<Notification> saveBulkWithNotifTypeFallback(List<Notification> notifications) {
+        try {
+            return notificationRepository.saveAll(notifications);
+        } catch (DataIntegrityViolationException ex) {
+            if (!isNotifTypeConstraintViolation(ex)) {
+                throw ex;
+            }
+            boolean alreadyFallback = notifications.stream()
+                .allMatch(notification -> FALLBACK_NOTIF_TYPE.equalsIgnoreCase(notification.getNotifType()));
+            if (alreadyFallback) {
+                throw ex;
+            }
+            notifications.forEach(notification -> notification.setNotifType(FALLBACK_NOTIF_TYPE));
+            return notificationRepository.saveAll(notifications);
+        }
+    }
+
+    private boolean isNotifTypeConstraintViolation(Throwable ex) {
+        Throwable cursor = ex;
+        while (cursor != null) {
+            String message = cursor.getMessage();
+            if (message != null) {
+                String lowered = message.toLowerCase();
+                if (lowered.contains("notif_type")
+                    && lowered.contains("constraint")) {
+                    return true;
+                }
+                if (lowered.contains("chk_notifications_notif_type")
+                    || lowered.contains("notifications_notif_type_check")) {
+                    return true;
+                }
+            }
+            cursor = cursor.getCause();
+        }
+        return false;
     }
 
     public Notification get(UUID id) {
