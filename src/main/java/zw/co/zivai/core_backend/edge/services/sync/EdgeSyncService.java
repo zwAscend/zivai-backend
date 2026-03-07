@@ -3,11 +3,15 @@ package zw.co.zivai.core_backend.edge.services.sync;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,7 +45,11 @@ public class EdgeSyncService {
         if (!syncProperties.getEdge().isWorkerEnabled()) {
             return;
         }
-        runSyncCycle();
+        try {
+            runSyncCycle();
+        } catch (Exception ex) {
+            log.warn("Scheduled sync cycle failed: {}", ex.getMessage(), ex);
+        }
     }
 
     public void runSyncCycle() {
@@ -49,8 +57,16 @@ public class EdgeSyncService {
             return;
         }
         UUID edgeNodeId = syncNodeIdentityService.getRequiredEdgeNodeId();
-        push(edgeNodeId);
-        pull(edgeNodeId);
+        try {
+            push(edgeNodeId);
+        } catch (Exception ex) {
+            log.warn("Edge push sync failed: {}", ex.getMessage(), ex);
+        }
+        try {
+            pull(edgeNodeId);
+        } catch (Exception ex) {
+            log.warn("Edge pull sync failed: {}", ex.getMessage(), ex);
+        }
     }
 
     public EdgeSyncStatusDto getStatus() {
@@ -96,21 +112,32 @@ public class EdgeSyncService {
             return;
         }
 
-        SyncPushResponse response = restClient.post()
-            .uri(syncProperties.getEdge().getCloudBaseUrl() + "/api/sync/push")
-            .header("X-Edge-Node-Id", edgeNodeId.toString())
-            .header("X-Edge-Auth-Key", valueOrEmpty(syncProperties.getEdge().getAuthKey()))
-            .body(buildPushRequest(edgeNodeId, batchId, batch))
-            .retrieve()
-            .body(SyncPushResponse.class);
+        SyncPushResponse response;
+        try {
+            response = invokeCloudWithRetry(
+                () -> restClient.post()
+                    .uri(syncProperties.getEdge().getCloudBaseUrl() + "/api/sync/push")
+                    .header("X-Edge-Node-Id", edgeNodeId.toString())
+                    .header("X-Edge-Auth-Key", valueOrEmpty(syncProperties.getEdge().getAuthKey()))
+                    .body(buildPushRequest(edgeNodeId, batchId, batch))
+                    .retrieve()
+                    .body(SyncPushResponse.class),
+                "push batch " + batchId
+            );
+        } catch (RuntimeException ex) {
+            syncOutboxService.failInProgressBatch(batchId, "Cloud push failed: " + ex.getMessage());
+            throw ex;
+        }
 
         if (response == null || response.getResults() == null) {
             log.warn("Cloud sync push returned no response items for batch {}", batchId);
+            syncOutboxService.failInProgressBatch(batchId, "Cloud push returned no per-item results.");
             return;
         }
 
         response.getResults().forEach(result ->
             syncOutboxService.markResult(result.getEventId(), result.getStatus(), result.getMessage()));
+        syncOutboxService.failInProgressBatch(batchId, "No per-item result returned from cloud.");
 
         syncNodeIdentityService.touchPush(edgeNodeId, Instant.now(), batchId);
     }
@@ -120,20 +147,23 @@ public class EdgeSyncService {
             .map(SyncCheckpointJdbcRepository.CheckpointRecord::lastPulledChangeId)
             .orElse(0L);
 
-        SyncPullResponse response = restClient.get()
-            .uri(syncProperties.getEdge().getCloudBaseUrl() + "/api/sync/pull?afterChangeId={afterChangeId}",
-                lastPulledChangeId)
-            .header("X-Edge-Node-Id", edgeNodeId.toString())
-            .header("X-Edge-Auth-Key", valueOrEmpty(syncProperties.getEdge().getAuthKey()))
-            .retrieve()
-            .body(SyncPullResponse.class);
+        SyncPullResponse response = invokeCloudWithRetry(
+            () -> restClient.get()
+                .uri(syncProperties.getEdge().getCloudBaseUrl() + "/api/sync/pull?afterChangeId={afterChangeId}",
+                    lastPulledChangeId)
+                .header("X-Edge-Node-Id", edgeNodeId.toString())
+                .header("X-Edge-Auth-Key", valueOrEmpty(syncProperties.getEdge().getAuthKey()))
+                .retrieve()
+                .body(SyncPullResponse.class),
+            "pull afterChangeId=" + lastPulledChangeId
+        );
 
         if (response == null || response.getChanges() == null || response.getChanges().isEmpty()) {
             return;
         }
 
         UUID batchId = UUID.randomUUID();
-        long maxChangeId = lastPulledChangeId;
+        long checkpointChangeId = lastPulledChangeId;
         for (var change : response.getChanges()) {
             syncInboxJdbcRepository.insertReceived(
                 edgeNodeId,
@@ -161,10 +191,23 @@ public class EdgeSyncService {
                 outcome.getStatus(),
                 outcome.getMessage()
             );
-            maxChangeId = Math.max(maxChangeId, change.getChangeId());
+
+            if (isSuccessfulPullOutcome(outcome.getStatus())) {
+                checkpointChangeId = change.getChangeId();
+                continue;
+            }
+
+            log.warn(
+                "Stopping pull batch {} at change {} due to status {} ({}).",
+                batchId,
+                change.getChangeId(),
+                outcome.getStatus(),
+                outcome.getMessage()
+            );
+            break;
         }
 
-        syncNodeIdentityService.touchPull(edgeNodeId, Instant.now(), batchId, maxChangeId);
+        syncNodeIdentityService.touchPull(edgeNodeId, Instant.now(), batchId, checkpointChangeId);
     }
 
     private SyncPushRequest buildPushRequest(
@@ -181,6 +224,69 @@ public class EdgeSyncService {
 
     private String valueOrEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private boolean isSuccessfulPullOutcome(String status) {
+        return "APPLIED".equals(status) || "SKIPPED".equals(status);
+    }
+
+    private <T> T invokeCloudWithRetry(Supplier<T> supplier, String operationName) {
+        int maxAttempts = Math.max(1, syncProperties.getEdge().getHttpMaxAttempts());
+        long backoffMs = Math.max(0L, syncProperties.getEdge().getRetryBackoffMs());
+        RuntimeException last = null;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return supplier.get();
+            } catch (RestClientResponseException ex) {
+                last = ex;
+                if (!isRetryableStatus(ex.getStatusCode().value()) || attempt == maxAttempts) {
+                    throw ex;
+                }
+                sleepBeforeRetry(backoffMs, attempt, operationName, ex.getStatusCode().value());
+            } catch (ResourceAccessException ex) {
+                last = ex;
+                if (attempt == maxAttempts) {
+                    throw ex;
+                }
+                sleepBeforeRetry(backoffMs, attempt, operationName, null);
+            } catch (RestClientException ex) {
+                last = ex;
+                if (attempt == maxAttempts) {
+                    throw ex;
+                }
+                sleepBeforeRetry(backoffMs, attempt, operationName, null);
+            }
+        }
+
+        throw last == null ? new IllegalStateException("Cloud sync request failed: " + operationName) : last;
+    }
+
+    private boolean isRetryableStatus(int statusCode) {
+        return statusCode == 408 || statusCode == 429 || statusCode >= 500;
+    }
+
+    private void sleepBeforeRetry(long backoffMs, int attempt, String operationName, Integer statusCode) {
+        if (backoffMs <= 0) {
+            return;
+        }
+        long sleepMs = backoffMs * attempt;
+        if (statusCode == null) {
+            log.debug("Retrying cloud sync {} in {} ms (attempt {}).", operationName, sleepMs, attempt + 1);
+        } else {
+            log.debug(
+                "Retrying cloud sync {} in {} ms (attempt {}, status {}).",
+                operationName,
+                sleepMs,
+                attempt + 1,
+                statusCode
+            );
+        }
+        try {
+            Thread.sleep(sleepMs);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private record Checkpoint(long lastPulledChangeId, Instant lastSuccessfulPushAt, Instant lastSuccessfulPullAt) {

@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import zw.co.zivai.core_backend.common.dtos.resources.CreateResourceRequest;
 import zw.co.zivai.core_backend.common.dtos.resources.ResourceCountsDto;
 import zw.co.zivai.core_backend.common.dtos.resources.ResourceDto;
@@ -46,6 +47,7 @@ import zw.co.zivai.core_backend.common.services.notification.NotificationService
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ResourceService {
     private final ResourceRepository resourceRepository;
     private final SchoolRepository schoolRepository;
@@ -58,6 +60,8 @@ public class ResourceService {
 
     private static final Path UPLOAD_ROOT = Path.of("core-backend", "uploads");
     private static final Set<String> ALLOWED_RESOURCE_TYPES = Set.of("document", "image", "video", "other");
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("lesson_plan", "notes", "practice", "assessment_material");
+    private static final Set<String> ALLOWED_RESOURCE_STATUSES = Set.of("active", "draft", "archived");
 
     public Resource create(CreateResourceRequest request) {
         School school = schoolRepository.findById(request.getSchoolId())
@@ -75,6 +79,11 @@ public class ResourceService {
 
         if (request.getName() == null || request.getName().isBlank()) {
             throw new BadRequestException("Resource name is required");
+        }
+
+        String normalizedContentType = normalizeContentType(request.getContentType());
+        if (normalizedContentType == null && isContent) {
+            normalizedContentType = "notes";
         }
 
         Resource resource = new Resource();
@@ -102,11 +111,11 @@ public class ResourceService {
         if (request.getTags() != null) {
             resource.setTags(request.getTags().toArray(new String[0]));
         }
-        resource.setContentType(request.getContentType());
+        resource.setContentType(normalizedContentType);
         resource.setContentBody(request.getContentBody());
         resource.setPublishAt(request.getPublishAt());
         resource.setDisplayOrder(request.getDisplayOrder());
-        resource.setStatus(request.getStatus());
+        resource.setStatus(normalizeResourceStatus(request.getStatus()));
 
         Resource saved = resourceRepository.save(resource);
         if (isContent && "content://pending".equals(saved.getUrl())) {
@@ -209,7 +218,7 @@ public class ResourceService {
             resource.setTags(request.getTags().toArray(new String[0]));
         }
         if (request.getContentType() != null) {
-            resource.setContentType(request.getContentType());
+            resource.setContentType(normalizeContentType(request.getContentType()));
         }
         if (request.getContentBody() != null) {
             resource.setContentBody(request.getContentBody());
@@ -222,7 +231,7 @@ public class ResourceService {
             resource.setDisplayOrder(request.getDisplayOrder());
         }
         if (request.getStatus() != null) {
-            resource.setStatus(request.getStatus());
+            resource.setStatus(normalizeResourceStatus(request.getStatus()));
         }
 
         Resource saved = resourceRepository.save(resource);
@@ -493,6 +502,51 @@ public class ResourceService {
         return isContent ? "document" : "other";
     }
 
+    private String normalizeContentType(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return null;
+        }
+
+        String compact = normalized.replace('-', '_');
+        return switch (compact) {
+            case "notes", "note", "worksheet", "slides", "revision_pack", "revision pack" -> "notes";
+            case "lesson_plan", "lesson summary", "lessonsummary", "lesson plan" -> "lesson_plan";
+            case "practice", "practices" -> "practice";
+            case "assessment", "assessment_material", "assessment material" -> "assessment_material";
+            default -> {
+                if (ALLOWED_CONTENT_TYPES.contains(compact)) {
+                    yield compact;
+                }
+                throw new BadRequestException(
+                    "Unsupported contentType '" + value + "'. Allowed values: " + String.join(", ", ALLOWED_CONTENT_TYPES)
+                );
+            }
+        };
+    }
+
+    private String normalizeResourceStatus(String value) {
+        if (value == null || value.isBlank()) {
+            return "active";
+        }
+
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if ("published".equals(normalized)) {
+            return "active";
+        }
+        if (ALLOWED_RESOURCE_STATUSES.contains(normalized)) {
+            return normalized;
+        }
+
+        throw new BadRequestException(
+            "Unsupported resource status '" + value + "'. Allowed values: active, draft, archived."
+        );
+    }
+
     private void syncResourceTopics(Resource resource, List<UUID> requestedTopicIds) {
         List<UUID> orderedTopicIds = requestedTopicIds == null
             ? List.of()
@@ -625,15 +679,19 @@ public class ResourceService {
         data.put("topicIds", new ArrayList<>(topicIds));
         data.put("event", "resource_published");
 
-        notificationService.createBulk(
-            school.getId(),
-            recipientIds,
-            "resource_published",
-            "New resource published",
-            resource.getName() + " is now available in " + safeSubjectName(subject) + ".",
-            data,
-            "medium"
-        );
+        try {
+            notificationService.createBulk(
+                school.getId(),
+                recipientIds,
+                "resource_published",
+                "New resource published",
+                resource.getName() + " is now available in " + safeSubjectName(subject) + ".",
+                data,
+                "medium"
+            );
+        } catch (RuntimeException ex) {
+            log.warn("Failed to create resource published notifications for resource {}", resource.getId(), ex);
+        }
     }
 
     private String safeSubjectName(Subject subject) {
