@@ -218,10 +218,14 @@ public class AssessmentService {
     }
 
     public void delete(UUID id) {
-        Assessment assessment = get(id);
-        assessment.setDeletedAt(Instant.now());
-        assessment.setStatus("archived");
-        assessmentRepository.save(assessment);
+        assessmentRepository.findById(id).ifPresent(assessment -> {
+            if (assessment.getDeletedAt() != null) {
+                return;
+            }
+            assessment.setDeletedAt(Instant.now());
+            assessment.setStatus("archived");
+            assessmentRepository.save(assessment);
+        });
     }
 
     public List<Assessment> list(UUID subjectId, String status) {
