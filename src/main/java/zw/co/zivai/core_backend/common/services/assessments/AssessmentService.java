@@ -2,9 +2,16 @@ package zw.co.zivai.core_backend.common.services.assessments;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
@@ -33,6 +40,15 @@ import zw.co.zivai.core_backend.common.repositories.user.UserRepository;
 @Service
 @RequiredArgsConstructor
 public class AssessmentService {
+    private static final ObjectMapper RUBRIC_JSON_MAPPER = new ObjectMapper();
+    private static final Set<String> SUPPORTED_QUESTION_TYPE_CODES = Set.of(
+        "short_answer",
+        "structured",
+        "mcq",
+        "true_false",
+        "essay"
+    );
+
     private final AssessmentRepository assessmentRepository;
     private final SchoolRepository schoolRepository;
     private final SubjectRepository subjectRepository;
@@ -202,10 +218,14 @@ public class AssessmentService {
     }
 
     public void delete(UUID id) {
-        Assessment assessment = get(id);
-        assessment.setDeletedAt(Instant.now());
-        assessment.setStatus("archived");
-        assessmentRepository.save(assessment);
+        assessmentRepository.findById(id).ifPresent(assessment -> {
+            if (assessment.getDeletedAt() != null) {
+                return;
+            }
+            assessment.setDeletedAt(Instant.now());
+            assessment.setStatus("archived");
+            assessmentRepository.save(assessment);
+        });
     }
 
     public List<Assessment> list(UUID subjectId, String status) {
@@ -236,10 +256,10 @@ public class AssessmentService {
                     .questionId(question.getId().toString())
                     .id(question.getId().toString())
                     .stem(question.getStem())
-                    .questionTypeCode(question.getQuestionTypeCode())
+                    .questionTypeCode(mapQuestionTypeCodeForApi(question.getQuestionTypeCode()))
                     .maxMark(question.getMaxMark())
                     .difficulty(question.getDifficulty() != null ? question.getDifficulty().intValue() : null)
-                    .rubricJson(question.getRubricJson())
+                    .rubricJson(fromRubricJson(question.getRubricJson()))
                     .sequenceIndex(assessmentQuestion.getSequenceIndex())
                     .points(assessmentQuestion.getPoints())
                     .build();
@@ -310,13 +330,41 @@ public class AssessmentService {
         question.setSubject(subject);
         question.setAuthor(author);
         question.setStem(questionRequest.getStem());
-        question.setQuestionTypeCode(questionRequest.getQuestionTypeCode());
+        question.setQuestionTypeCode(normalizeQuestionTypeCodeForStorage(questionRequest.getQuestionTypeCode()));
         question.setMaxMark(questionRequest.getMaxMark() != null ? questionRequest.getMaxMark() : 1.0);
         if (questionRequest.getDifficulty() != null) {
             question.setDifficulty(questionRequest.getDifficulty().shortValue());
         }
-        question.setRubricJson(questionRequest.getRubricJson());
+        question.setRubricJson(toRubricJson(questionRequest.getRubricJson()));
         return question;
+    }
+
+    private JsonNode toRubricJson(Object rubricJson) {
+        if (rubricJson == null) {
+            return null;
+        }
+        if (rubricJson instanceof JsonNode node) {
+            return normalizeRubricJson(node);
+        }
+        if (rubricJson instanceof String raw) {
+            String trimmed = raw.trim();
+            if (trimmed.isEmpty()) {
+                return null;
+            }
+            try {
+                return normalizeRubricJson(RUBRIC_JSON_MAPPER.readTree(trimmed));
+            } catch (Exception ex) {
+                throw new BadRequestException("Invalid rubricJson payload.");
+            }
+        }
+        return normalizeRubricJson(RUBRIC_JSON_MAPPER.valueToTree(rubricJson));
+    }
+
+    private Object fromRubricJson(JsonNode rubricJson) {
+        if (rubricJson == null || rubricJson.isNull()) {
+            return null;
+        }
+        return RUBRIC_JSON_MAPPER.convertValue(rubricJson, Object.class);
     }
 
     private void validateQuestionRequest(CreateAssessmentQuestionRequest questionRequest) {
@@ -326,6 +374,160 @@ public class AssessmentService {
         if (questionRequest.getQuestionTypeCode() == null || questionRequest.getQuestionTypeCode().isBlank()) {
             throw new BadRequestException("Question type is required");
         }
+        String normalizedQuestionType = normalizeQuestionTypeCodeForStorage(questionRequest.getQuestionTypeCode());
+        if (!SUPPORTED_QUESTION_TYPE_CODES.contains(normalizedQuestionType)) {
+            throw new BadRequestException("Unsupported question type: " + questionRequest.getQuestionTypeCode());
+        }
+        JsonNode rubricNode = toRubricJson(questionRequest.getRubricJson());
+        if (!hasMandatoryAnswer(normalizedQuestionType, rubricNode)) {
+            throw new BadRequestException("Each question must include at least one expected/correct answer.");
+        }
+    }
+
+    private String normalizeQuestionTypeCodeForStorage(String rawQuestionTypeCode) {
+        if (rawQuestionTypeCode == null) {
+            return null;
+        }
+        String normalized = rawQuestionTypeCode
+            .trim()
+            .toLowerCase(Locale.ROOT)
+            .replace('-', '_')
+            .replace(' ', '_');
+
+        return switch (normalized) {
+            case "multiple_choice", "multiplechoice", "mcq" -> "mcq";
+            case "truefalse", "boolean", "true_false" -> "true_false";
+            case "shortanswer", "short_answer" -> "short_answer";
+            case "longanswer", "long_answer" -> "essay";
+            default -> normalized;
+        };
+    }
+
+    private String mapQuestionTypeCodeForApi(String rawQuestionTypeCode) {
+        String normalized = normalizeQuestionTypeCodeForStorage(rawQuestionTypeCode);
+        if ("mcq".equals(normalized)) {
+            return "multiple_choice";
+        }
+        return normalized;
+    }
+
+    private JsonNode normalizeRubricJson(JsonNode rubricNode) {
+        if (rubricNode == null || rubricNode.isNull() || !rubricNode.isObject()) {
+            return rubricNode;
+        }
+
+        ObjectNode objectNode = ((ObjectNode) rubricNode).deepCopy();
+        LinkedHashSet<String> mergedPoints = new LinkedHashSet<>();
+
+        JsonNode markingPointsNode = objectNode.path("markingPoints");
+        if (markingPointsNode.isArray()) {
+            for (JsonNode pointNode : markingPointsNode) {
+                String point = pointNode == null ? "" : pointNode.asText("");
+                if (!point.isBlank()) {
+                    mergedPoints.add(point.trim());
+                }
+            }
+        }
+
+        String markingGuide = objectNode.path("markingGuide").asText("");
+        if (!markingGuide.isBlank()) {
+            String[] lines = markingGuide.split("\\r?\\n");
+            for (String line : lines) {
+                String cleaned = line.replaceFirst("^\\s*[-*]\\s*", "").trim();
+                if (!cleaned.isBlank()) {
+                    mergedPoints.add(cleaned);
+                }
+            }
+        }
+
+        if (!mergedPoints.isEmpty()) {
+            ArrayNode normalizedPoints = RUBRIC_JSON_MAPPER.createArrayNode();
+            for (String point : mergedPoints) {
+                normalizedPoints.add(point);
+            }
+            objectNode.set("markingPoints", normalizedPoints);
+            if (markingGuide.isBlank()) {
+                objectNode.put("markingGuide", String.join("\n", mergedPoints));
+            }
+        }
+
+        return objectNode;
+    }
+
+    private boolean hasMandatoryAnswer(String normalizedQuestionType, JsonNode rubricNode) {
+        if (rubricNode == null || rubricNode.isNull()) {
+            return false;
+        }
+
+        if ("mcq".equals(normalizedQuestionType) || "true_false".equals(normalizedQuestionType)) {
+            return hasAtLeastOneCorrectAnswer(rubricNode);
+        }
+
+        return hasAtLeastOneMarkingPoint(rubricNode) || hasAnyNonBlankText(rubricNode,
+            "markingGuide",
+            "expectedAnswer",
+            "correctAnswer",
+            "answer",
+            "modelAnswer"
+        );
+    }
+
+    private boolean hasAtLeastOneCorrectAnswer(JsonNode rubricNode) {
+        if (!rubricNode.isObject()) {
+            return hasNonBlankText(rubricNode);
+        }
+
+        JsonNode answersNode = rubricNode.path("correctAnswers");
+        if (answersNode.isArray()) {
+            for (JsonNode answerNode : answersNode) {
+                if (hasNonBlankText(answerNode)) {
+                    return true;
+                }
+            }
+        } else if (hasNonBlankText(answersNode)) {
+            return true;
+        }
+
+        return hasAnyNonBlankText(rubricNode, "correctAnswer", "expectedAnswer", "answer");
+    }
+
+    private boolean hasAtLeastOneMarkingPoint(JsonNode rubricNode) {
+        if (!rubricNode.isObject()) {
+            return false;
+        }
+        JsonNode pointsNode = rubricNode.path("markingPoints");
+        if (!pointsNode.isArray()) {
+            return false;
+        }
+        for (JsonNode pointNode : pointsNode) {
+            if (hasNonBlankText(pointNode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasAnyNonBlankText(JsonNode rubricNode, String... keys) {
+        if (!rubricNode.isObject()) {
+            return hasNonBlankText(rubricNode);
+        }
+        for (String key : keys) {
+            if (hasNonBlankText(rubricNode.path(key))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasNonBlankText(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return false;
+        }
+        if (node.isTextual()) {
+            return !node.asText("").isBlank();
+        }
+        String value = node.asText("");
+        return !value.isBlank();
     }
 
     private School resolveSchool() {

@@ -243,10 +243,14 @@ public class ResourceService {
     }
 
     public void delete(UUID id) {
-        Resource resource = get(id);
-        resource.setDeletedAt(Instant.now());
-        resource.setStatus("archived");
-        resourceRepository.save(resource);
+        resourceRepository.findById(id).ifPresent(resource -> {
+            if (resource.getDeletedAt() != null) {
+                return;
+            }
+            resource.setDeletedAt(Instant.now());
+            resource.setStatus("archived");
+            resourceRepository.save(resource);
+        });
     }
 
     public ResourceDto addTopics(UUID resourceId, List<UUID> topicIds) {

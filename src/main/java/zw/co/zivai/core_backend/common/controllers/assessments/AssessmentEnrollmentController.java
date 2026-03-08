@@ -39,8 +39,9 @@ public class AssessmentEnrollmentController {
     @GetMapping("/summary")
     public List<AssessmentEnrollmentSummaryDto> listSummary(@RequestParam(required = false) UUID assignmentId,
                                                             @RequestParam(required = false) UUID studentId,
-                                                            @RequestParam(required = false) UUID classId) {
-        return assessmentEnrollmentService.listSummary(assignmentId, studentId, classId);
+                                                            @RequestParam(required = false) UUID classId,
+                                                            @RequestParam(required = false) UUID subjectId) {
+        return assessmentEnrollmentService.listSummary(assignmentId, studentId, classId, subjectId);
     }
 
     @GetMapping("/{id}")

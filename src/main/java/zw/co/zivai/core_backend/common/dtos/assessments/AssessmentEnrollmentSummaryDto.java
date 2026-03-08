@@ -19,6 +19,8 @@ public class AssessmentEnrollmentSummaryDto {
     private String assignmentId;
     private String assessmentId;
     private String assessmentName;
+    private String subjectId;
+    private String subjectName;
     private String classId;
     private String className;
     private Instant dueTime;

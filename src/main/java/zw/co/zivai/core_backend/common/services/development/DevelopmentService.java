@@ -43,8 +43,6 @@ import zw.co.zivai.core_backend.common.models.lms.development.PlanSkill;
 import zw.co.zivai.core_backend.common.models.lms.development.PlanStep;
 import zw.co.zivai.core_backend.common.models.lms.development.PlanSubskill;
 import zw.co.zivai.core_backend.common.models.lms.development.Skill;
-import zw.co.zivai.core_backend.common.models.lms.classroom.ClassEntity;
-import zw.co.zivai.core_backend.common.models.lms.students.Enrolment;
 import zw.co.zivai.core_backend.common.models.lms.students.StudentAttribute;
 import zw.co.zivai.core_backend.common.models.lms.students.StudentActivityDay;
 import zw.co.zivai.core_backend.common.models.lms.students.StudentPlan;
@@ -992,13 +990,8 @@ public class DevelopmentService {
     }
 
     private UUID resolveStudentSchoolId(UUID studentId) {
-        return enrolmentRepository.findByStudent_Id(studentId).stream()
-            .filter(enrolment -> enrolment.getDeletedAt() == null)
-            .map(Enrolment::getClassEntity)
-            .filter(classEntity -> classEntity != null && classEntity.getDeletedAt() == null)
-            .map(ClassEntity::getSchool)
-            .filter(school -> school != null && school.getDeletedAt() == null && school.getId() != null)
-            .map(school -> school.getId())
+        return enrolmentRepository.findActiveSchoolIdsByStudentId(studentId).stream()
+            .filter(id -> id != null)
             .findFirst()
             .orElse(null);
     }

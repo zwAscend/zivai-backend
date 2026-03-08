@@ -6,6 +6,8 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import zw.co.zivai.core_backend.common.models.lms.students.Enrolment;
 
@@ -27,4 +29,17 @@ public interface EnrolmentRepository extends JpaRepository<Enrolment, UUID> {
 
     @EntityGraph(attributePaths = {"student", "classEntity", "classEntity.homeroomTeacher"})
     List<Enrolment> findByClassEntity_IdInAndDeletedAtIsNull(List<UUID> classIds);
+
+    @Query("""
+        select s.id
+        from Enrolment e
+        join e.classEntity c
+        join c.school s
+        where e.student.id = :studentId
+          and e.deletedAt is null
+          and c.deletedAt is null
+          and s.deletedAt is null
+        order by e.createdAt asc
+    """)
+    List<UUID> findActiveSchoolIdsByStudentId(@Param("studentId") UUID studentId);
 }

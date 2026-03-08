@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -20,23 +21,32 @@ import zw.co.zivai.core_backend.common.dtos.sync.SyncChangeItemDto;
 public class SyncOutboxJdbcRepository {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private volatile Boolean syncOutboxHasEventTypeColumn;
 
     public void insert(UUID edgeNodeId, UUID eventId, String aggregateType, UUID aggregateId, String operation, long entityVersion, JsonNode payload) {
-        jdbcTemplate.update(
-            """
-            INSERT INTO edge.sync_outbox (
-              edge_node_id, event_id, aggregate_type, aggregate_id,
-              operation, entity_version, payload, status
-            ) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), 'PENDING')
-            """,
-            edgeNodeId,
-            eventId,
-            aggregateType,
-            aggregateId,
-            operation,
-            entityVersion,
-            payload == null ? "{}" : payload.toString()
-        );
+        String payloadJson = payload == null ? "{}" : payload.toString();
+        if (Boolean.FALSE.equals(syncOutboxHasEventTypeColumn)) {
+            try {
+                insertWithoutEventType(edgeNodeId, eventId, aggregateType, aggregateId, operation, entityVersion, payloadJson);
+                return;
+            } catch (DataAccessException ex) {
+                if (!isMissingRequiredEventType(ex)) {
+                    throw ex;
+                }
+                syncOutboxHasEventTypeColumn = Boolean.TRUE;
+            }
+        }
+
+        try {
+            insertWithEventType(edgeNodeId, eventId, aggregateType, aggregateId, operation, entityVersion, payloadJson);
+            syncOutboxHasEventTypeColumn = Boolean.TRUE;
+        } catch (DataAccessException ex) {
+            if (!isUndefinedEventTypeColumn(ex)) {
+                throw ex;
+            }
+            syncOutboxHasEventTypeColumn = Boolean.FALSE;
+            insertWithoutEventType(edgeNodeId, eventId, aggregateType, aggregateId, operation, entityVersion, payloadJson);
+        }
     }
 
     public List<SyncChangeItemDto> reservePendingBatch(UUID edgeNodeId, UUID batchId, int limit) {
@@ -139,5 +149,98 @@ public class SyncOutboxJdbcRepository {
         } catch (Exception ex) {
             throw new SQLException("Failed to parse sync outbox payload JSON", ex);
         }
+    }
+
+    private String deriveEventType(String aggregateType, String operation) {
+        if (aggregateType != null && !aggregateType.isBlank()) {
+            return aggregateType;
+        }
+        return operation == null || operation.isBlank() ? "UNKNOWN" : operation;
+    }
+
+    private void insertWithEventType(
+        UUID edgeNodeId,
+        UUID eventId,
+        String aggregateType,
+        UUID aggregateId,
+        String operation,
+        long entityVersion,
+        String payloadJson
+    ) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO edge.sync_outbox (
+              edge_node_id, event_id, event_type, aggregate_type, aggregate_id,
+              operation, entity_version, payload, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS jsonb), 'PENDING')
+            """,
+            edgeNodeId,
+            eventId,
+            deriveEventType(aggregateType, operation),
+            aggregateType,
+            aggregateId,
+            operation,
+            entityVersion,
+            payloadJson
+        );
+    }
+
+    private void insertWithoutEventType(
+        UUID edgeNodeId,
+        UUID eventId,
+        String aggregateType,
+        UUID aggregateId,
+        String operation,
+        long entityVersion,
+        String payloadJson
+    ) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO edge.sync_outbox (
+              edge_node_id, event_id, aggregate_type, aggregate_id,
+              operation, entity_version, payload, status
+            ) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), 'PENDING')
+            """,
+            edgeNodeId,
+            eventId,
+            aggregateType,
+            aggregateId,
+            operation,
+            entityVersion,
+            payloadJson
+        );
+    }
+
+    private boolean isUndefinedEventTypeColumn(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof SQLException sqlEx && (
+                "42703".equals(sqlEx.getSQLState())
+                || messageContains(sqlEx.getMessage(), "column")
+            ) && messageContains(sqlEx.getMessage(), "event_type")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isMissingRequiredEventType(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof SQLException sqlEx && (
+                "23502".equals(sqlEx.getSQLState())
+                || messageContains(sqlEx.getMessage(), "null value")
+            ) && messageContains(sqlEx.getMessage(), "event_type")
+                && messageContains(sqlEx.getMessage(), "sync_outbox")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean messageContains(String source, String token) {
+        return source != null && token != null && source.toLowerCase().contains(token.toLowerCase());
     }
 }
