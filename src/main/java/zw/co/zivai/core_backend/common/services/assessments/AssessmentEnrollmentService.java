@@ -52,7 +52,7 @@ public class AssessmentEnrollmentService {
         return assessmentEnrollmentRepository.findByDeletedAtIsNull();
     }
 
-    public List<AssessmentEnrollmentSummaryDto> listSummary(UUID assignmentId, UUID studentId, UUID classId) {
+    public List<AssessmentEnrollmentSummaryDto> listSummary(UUID assignmentId, UUID studentId, UUID classId, UUID subjectId) {
         List<AssessmentEnrollment> enrollments;
         if (assignmentId != null && studentId != null) {
             enrollments = assessmentEnrollmentRepository
@@ -67,6 +67,17 @@ public class AssessmentEnrollmentService {
             enrollments = assessmentEnrollmentRepository.findByAssessmentAssignment_ClassEntity_IdAndDeletedAtIsNull(classId);
         } else {
             enrollments = assessmentEnrollmentRepository.findByDeletedAtIsNull();
+        }
+
+        if (subjectId != null) {
+            enrollments = enrollments.stream()
+                .filter(enrollment ->
+                    enrollment.getAssessmentAssignment() != null &&
+                    enrollment.getAssessmentAssignment().getAssessment() != null &&
+                    enrollment.getAssessmentAssignment().getAssessment().getSubject() != null &&
+                    subjectId.equals(enrollment.getAssessmentAssignment().getAssessment().getSubject().getId())
+                )
+                .toList();
         }
 
         return enrollments.stream()
@@ -95,6 +106,12 @@ public class AssessmentEnrollmentService {
             .assignmentId(assignment.getId().toString())
             .assessmentId(assessment.getId().toString())
             .assessmentName(assessment.getName())
+            .subjectId(
+                assessment.getSubject() != null && assessment.getSubject().getId() != null
+                    ? assessment.getSubject().getId().toString()
+                    : null
+            )
+            .subjectName(assessment.getSubject() != null ? assessment.getSubject().getName() : null)
             .classId(classEntity != null ? classEntity.getId().toString() : null)
             .className(classEntity != null ? classEntity.getName() : null)
             .dueTime(assignment.getDueTime())

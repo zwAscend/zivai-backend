@@ -1340,6 +1340,8 @@ public class DataSeeder {
         jdbcTemplate.update(
             "INSERT INTO lookups.question_type (code, name) VALUES ('mcq', 'Multiple Choice') ON CONFLICT (code) DO NOTHING");
         jdbcTemplate.update(
+            "INSERT INTO lookups.question_type (code, name) VALUES ('multiple_choice', 'Multiple Choice') ON CONFLICT (code) DO NOTHING");
+        jdbcTemplate.update(
             "INSERT INTO lookups.question_type (code, name) VALUES ('true_false', 'True/False') ON CONFLICT (code) DO NOTHING");
         jdbcTemplate.update(
             "INSERT INTO lookups.question_type (code, name) VALUES ('essay', 'Essay') ON CONFLICT (code) DO NOTHING");

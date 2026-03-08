@@ -91,6 +91,6 @@ public class AssessmentAssignmentController {
 
     @GetMapping("/{id}/enrollments")
     public List<AssessmentEnrollmentSummaryDto> listEnrollments(@PathVariable UUID id) {
-        return assessmentEnrollmentService.listSummary(id, null, null);
+        return assessmentEnrollmentService.listSummary(id, null, null, null);
     }
 }

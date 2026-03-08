@@ -15,6 +15,7 @@ INSERT INTO lookups.question_type (code, name) VALUES
   ('short_answer', 'Short Answer'),
   ('structured', 'Structured'),
   ('mcq', 'Multiple Choice'),
+  ('multiple_choice', 'Multiple Choice'),
   ('true_false', 'True or False'),
   ('essay', 'Essay')
 ON CONFLICT (code) DO NOTHING;
