@@ -114,7 +114,7 @@ public class DataSeeder {
     }
 
     @Bean
-    @ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true", matchIfMissing = false)
     CommandLineRunner seedUsers() {
         return args -> runSeedingWithRetry();
     }

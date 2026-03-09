@@ -8,6 +8,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -25,9 +27,21 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.common.dtos.students.StudentAssessmentDetailDto;
+import zw.co.zivai.core_backend.common.dtos.students.StudentActivityFeedItemDto;
 import zw.co.zivai.core_backend.common.dtos.students.StudentAssessmentHistoryItemDto;
+import zw.co.zivai.core_backend.common.dtos.students.StudentPracticeAnswerRequest;
+import zw.co.zivai.core_backend.common.dtos.students.StudentPracticeAnswerResultDto;
+import zw.co.zivai.core_backend.common.dtos.students.StudentPracticeQuestionDto;
+import zw.co.zivai.core_backend.common.dtos.students.StudentPracticeSessionDto;
+import zw.co.zivai.core_backend.common.dtos.students.StudentPlanRuntimeProgressDto;
+import zw.co.zivai.core_backend.common.dtos.students.StudentPlanRuntimeProgressRequest;
+import zw.co.zivai.core_backend.common.dtos.students.StartStudentPracticeSessionRequest;
 import zw.co.zivai.core_backend.common.dtos.students.StudentDto;
 import zw.co.zivai.core_backend.common.dtos.students.StudentChallengeEligibilityDto;
 import zw.co.zivai.core_backend.common.dtos.students.StudentSubjectOverviewDto;
@@ -39,27 +53,40 @@ import zw.co.zivai.core_backend.common.exceptions.BadRequestException;
 import zw.co.zivai.core_backend.common.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.common.models.lms.classroom.ClassSubject;
 import zw.co.zivai.core_backend.common.models.lms.classroom.ClassEntity;
+import zw.co.zivai.core_backend.common.models.lms.assessments.Assessment;
 import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentAssignment;
 import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentAttempt;
 import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentEnrollment;
+import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentQuestion;
 import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentResult;
+import zw.co.zivai.core_backend.common.models.lms.assessments.AttemptAnswer;
+import zw.co.zivai.core_backend.common.models.lms.development.PlanStep;
+import zw.co.zivai.core_backend.common.models.lms.resources.Question;
+import zw.co.zivai.core_backend.common.models.lms.school.School;
 import zw.co.zivai.core_backend.common.models.lms.students.Enrolment;
 import zw.co.zivai.core_backend.common.models.lms.students.StudentAttribute;
+import zw.co.zivai.core_backend.common.models.lms.students.StudentPlan;
 import zw.co.zivai.core_backend.common.models.lms.students.StudentProfile;
 import zw.co.zivai.core_backend.common.models.lms.students.StudentSubjectEnrolment;
 import zw.co.zivai.core_backend.common.models.lms.subjects.Subject;
 import zw.co.zivai.core_backend.common.models.lms.resources.Topic;
 import zw.co.zivai.core_backend.common.models.lms.users.User;
 import zw.co.zivai.core_backend.common.repositories.assessments.AttemptAnswerRepository;
+import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentAssignmentRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentAttemptRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentEnrollmentRepository;
+import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentQuestionRepository;
+import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentResultRepository;
 import zw.co.zivai.core_backend.common.repositories.classroom.ClassSubjectRepository;
 import zw.co.zivai.core_backend.common.repositories.classroom.EnrolmentRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.QuestionRepository;
+import zw.co.zivai.core_backend.common.repositories.development.PlanStepRepository;
 import zw.co.zivai.core_backend.common.repositories.subject.SubjectRepository;
 import zw.co.zivai.core_backend.common.repositories.subject.TopicRepository;
 import zw.co.zivai.core_backend.common.repositories.development.StudentAttributeRepository;
+import zw.co.zivai.core_backend.common.repositories.development.StudentPlanRepository;
+import zw.co.zivai.core_backend.common.repositories.school.SchoolRepository;
 import zw.co.zivai.core_backend.common.repositories.students.StudentProfileRepository;
 import zw.co.zivai.core_backend.common.repositories.classroom.StudentSubjectEnrolmentRepository;
 import zw.co.zivai.core_backend.common.repositories.user.UserRepository;
@@ -71,6 +98,11 @@ public class StudentService {
     private static final int MIN_QUESTIONS_FOR_SUBJECT_CHALLENGE = 6;
     private static final Pattern UNIT_PATTERN = Pattern.compile("unit[\\s\\-_]*(\\d+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern UNIT_PREFIX_PATTERN = Pattern.compile("\\bu[\\s\\-_]*(\\d+)", Pattern.CASE_INSENSITIVE);
+    private static final Instant OPEN_START_INSTANT = Instant.EPOCH;
+    private static final Instant OPEN_END_INSTANT = Instant.parse("9999-12-31T23:59:59Z");
+    private static final int DEFAULT_PRACTICE_QUESTION_COUNT = 8;
+    private static final int MAX_PRACTICE_QUESTION_COUNT = 30;
+    private static final Set<String> PRACTICE_SESSION_MODES = Set.of("topic_practice", "topic_challenge", "subject_challenge");
 
     private final UserRepository userRepository;
     private final SubjectRepository subjectRepository;
@@ -82,9 +114,16 @@ public class StudentService {
     private final TopicRepository topicRepository;
     private final QuestionRepository questionRepository;
     private final AttemptAnswerRepository attemptAnswerRepository;
+    private final AssessmentRepository assessmentRepository;
+    private final AssessmentAssignmentRepository assessmentAssignmentRepository;
+    private final AssessmentQuestionRepository assessmentQuestionRepository;
     private final AssessmentEnrollmentRepository assessmentEnrollmentRepository;
     private final AssessmentAttemptRepository assessmentAttemptRepository;
     private final AssessmentResultRepository assessmentResultRepository;
+    private final PlanStepRepository planStepRepository;
+    private final StudentPlanRepository studentPlanRepository;
+    private final SchoolRepository schoolRepository;
+    private final ObjectMapper objectMapper;
 
     public List<StudentDto> list() {
         return toStudentDtos(userRepository.findByRoles_CodeAndDeletedAtIsNull("student"));
@@ -126,8 +165,17 @@ public class StudentService {
             throw new BadRequestException("from must be before or equal to to");
         }
 
+        boolean applyFrom = fromDate != null;
+        boolean applyTo = toDate != null;
         List<AssessmentEnrollment> enrollments = assessmentEnrollmentRepository
-            .findStudentHistory(studentId, subjectId, fromDate, toDate);
+            .findStudentHistory(
+                studentId,
+                subjectId,
+                applyFrom,
+                applyFrom ? fromDate : OPEN_START_INSTANT,
+                applyTo,
+                applyTo ? toDate : OPEN_END_INSTANT
+            );
         return mapStudentAssessmentHistory(studentId, enrollments, status);
     }
 
@@ -172,6 +220,529 @@ public class StudentService {
             .latestGrade(latestHistory.getGrade())
             .latestFeedback(latestHistory.getFeedback())
             .history(history)
+            .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<StudentActivityFeedItemDto> getStudentActivityFeed(UUID studentId,
+                                                                   UUID subjectId,
+                                                                   String from,
+                                                                   String to,
+                                                                   Integer limit) {
+        userRepository.findByIdAndDeletedAtIsNull(studentId)
+            .orElseThrow(() -> new NotFoundException("Student not found: " + studentId));
+
+        Instant fromDate = parseOptionalInstant(from, false);
+        Instant toDate = parseOptionalInstant(to, true);
+        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            throw new BadRequestException("from must be before or equal to to");
+        }
+
+        int safeLimit = limit == null ? 50 : Math.max(1, Math.min(250, limit));
+
+        List<AssessmentAttempt> attempts = assessmentAttemptRepository.findSubmittedHistoryByStudent(
+            studentId,
+            subjectId,
+            fromDate != null,
+            fromDate,
+            toDate != null,
+            toDate
+        );
+
+        Map<UUID, AttemptMetrics> attemptMetrics = new HashMap<>();
+        List<UUID> attemptIds = attempts.stream()
+            .map(AssessmentAttempt::getId)
+            .filter(Objects::nonNull)
+            .toList();
+        if (!attemptIds.isEmpty()) {
+            for (Object[] row : attemptAnswerRepository.summarizeByAssessmentAttemptIds(attemptIds)) {
+                if (row == null || row.length < 5 || row[0] == null) {
+                    continue;
+                }
+                UUID attemptId = (UUID) row[0];
+                int answeredCount = ((Number) row[1]).intValue();
+                int correctCount = ((Number) row[2]).intValue();
+                double score = row[3] == null ? 0.0 : ((Number) row[3]).doubleValue();
+                double maxScore = row[4] == null ? 0.0 : ((Number) row[4]).doubleValue();
+                attemptMetrics.put(attemptId, new AttemptMetrics(answeredCount, correctCount, score, maxScore));
+            }
+        }
+
+        Map<UUID, Integer> questionCountByAssessment = new HashMap<>();
+        List<UUID> assessmentIds = attempts.stream()
+            .map(AssessmentAttempt::getAssessmentEnrollment)
+            .filter(Objects::nonNull)
+            .map(AssessmentEnrollment::getAssessmentAssignment)
+            .filter(Objects::nonNull)
+            .map(AssessmentAssignment::getAssessment)
+            .filter(Objects::nonNull)
+            .map(assessment -> assessment.getId())
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+        if (!assessmentIds.isEmpty()) {
+            for (Object[] row : assessmentQuestionRepository.countByAssessmentIds(assessmentIds)) {
+                if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
+                    continue;
+                }
+                questionCountByAssessment.put((UUID) row[0], ((Number) row[1]).intValue());
+            }
+        }
+
+        List<StudentActivityFeedItemDto> feedItems = new ArrayList<>();
+        for (AssessmentAttempt attempt : attempts) {
+            AssessmentEnrollment enrollment = attempt.getAssessmentEnrollment();
+            if (enrollment == null || enrollment.getAssessmentAssignment() == null) {
+                continue;
+            }
+            AssessmentAssignment assignment = enrollment.getAssessmentAssignment();
+            if (assignment.getAssessment() == null || assignment.getAssessment().getSubject() == null) {
+                continue;
+            }
+
+            AttemptMetrics metrics = attemptMetrics.getOrDefault(attempt.getId(), AttemptMetrics.ZERO);
+            UUID assessmentId = assignment.getAssessment().getId();
+            int totalQuestions = questionCountByAssessment.getOrDefault(
+                assessmentId,
+                metrics.answeredCount > 0 ? metrics.answeredCount : 0
+            );
+            Integer timeMinutes = null;
+            if (attempt.getStartedAt() != null && attempt.getSubmittedAt() != null && !attempt.getSubmittedAt().isBefore(attempt.getStartedAt())) {
+                long minutes = Duration.between(attempt.getStartedAt(), attempt.getSubmittedAt()).toMinutes();
+                timeMinutes = (int) Math.max(0, minutes);
+            }
+
+            double score = attempt.getFinalScore() != null
+                ? attempt.getFinalScore()
+                : attempt.getTotalScore() != null ? attempt.getTotalScore() : metrics.score;
+            double maxScore = attempt.getMaxScore() != null && attempt.getMaxScore() > 0
+                ? attempt.getMaxScore()
+                : metrics.maxScore;
+
+            String title = assignment.getTitle() != null && !assignment.getTitle().isBlank()
+                ? assignment.getTitle()
+                : assignment.getAssessment().getName();
+
+            feedItems.add(StudentActivityFeedItemDto.builder()
+                .id("attempt-" + attempt.getId())
+                .activityType("assessment_attempt")
+                .sourceId(attempt.getId().toString())
+                .title(title)
+                .subjectId(assignment.getAssessment().getSubject().getId().toString())
+                .subjectName(assignment.getAssessment().getSubject().getName())
+                .occurredAt(attempt.getSubmittedAt())
+                .level(resolveAttemptLevel(attempt))
+                .correctCount(metrics.correctCount > 0 ? metrics.correctCount : null)
+                .totalCount(totalQuestions > 0 ? totalQuestions : null)
+                .score(maxScore > 0 ? roundOneDecimal(score) : null)
+                .maxScore(maxScore > 0 ? roundOneDecimal(maxScore) : null)
+                .timeMinutes(timeMinutes)
+                .build());
+        }
+
+        List<StudentPlan> studentPlans = subjectId == null
+            ? studentPlanRepository.findByStudent_IdAndDeletedAtIsNullOrderByCreatedAtDesc(studentId)
+            : studentPlanRepository.findByStudent_IdAndSubject_IdAndDeletedAtIsNullOrderByCreatedAtDesc(studentId, subjectId);
+        for (StudentPlan studentPlan : studentPlans) {
+            Instant occurredAt = studentPlan.getUpdatedAt() != null ? studentPlan.getUpdatedAt() : studentPlan.getCreatedAt();
+            if (occurredAt == null) {
+                continue;
+            }
+            if (fromDate != null && occurredAt.isBefore(fromDate)) {
+                continue;
+            }
+            if (toDate != null && occurredAt.isAfter(toDate)) {
+                continue;
+            }
+            if (studentPlan.getPlan() == null || studentPlan.getSubject() == null) {
+                continue;
+            }
+
+            feedItems.add(StudentActivityFeedItemDto.builder()
+                .id("plan-" + studentPlan.getId())
+                .activityType("plan_progress")
+                .sourceId(studentPlan.getId().toString())
+                .title(studentPlan.getPlan().getName())
+                .subjectId(studentPlan.getSubject().getId().toString())
+                .subjectName(studentPlan.getSubject().getName())
+                .occurredAt(occurredAt)
+                .level(studentPlan.getStatus())
+                .progressPercent(roundOneDecimal(studentPlan.getCurrentProgress() == null ? 0.0 : studentPlan.getCurrentProgress()))
+                .build());
+        }
+
+        feedItems.sort(Comparator
+            .comparing(StudentActivityFeedItemDto::getOccurredAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(StudentActivityFeedItemDto::getId, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)));
+        if (feedItems.size() <= safeLimit) {
+            return feedItems;
+        }
+        return feedItems.subList(0, safeLimit);
+    }
+
+    @Transactional
+    public StudentPracticeSessionDto startPracticeSession(UUID studentId,
+                                                          UUID subjectId,
+                                                          StartStudentPracticeSessionRequest request) {
+        User student = userRepository.findByIdAndDeletedAtIsNull(studentId)
+            .orElseThrow(() -> new NotFoundException("Student not found: " + studentId));
+        Subject subject = subjectRepository.findByIdAndDeletedAtIsNull(subjectId)
+            .orElseThrow(() -> new NotFoundException("Subject not found: " + subjectId));
+
+        String mode = normalizePracticeMode(request != null ? request.getMode() : null);
+        int questionCount = clampQuestionCount(request != null ? request.getQuestionCount() : null);
+        Topic topic = resolvePracticeTopic(subjectId, request != null ? request.getTopicId() : null);
+        List<Question> selectedQuestions = resolvePracticeQuestions(subjectId, topic, questionCount);
+        double totalMaxScore = selectedQuestions.stream()
+            .map(Question::getMaxMark)
+            .filter(Objects::nonNull)
+            .mapToDouble(Double::doubleValue)
+            .sum();
+        if (totalMaxScore <= 0) {
+            totalMaxScore = selectedQuestions.size();
+        }
+
+        School school = resolveStudentSchool(studentId);
+        String title = resolvePracticeTitle(subject, topic, request != null ? request.getTitle() : null, mode);
+
+        Assessment assessment = new Assessment();
+        assessment.setSchool(school);
+        assessment.setSubject(subject);
+        assessment.setName(title);
+        assessment.setDescription("Student practice session");
+        assessment.setAssessmentType("practice");
+        assessment.setVisibility("private");
+        assessment.setAttemptsAllowed(1);
+        assessment.setMaxScore(totalMaxScore);
+        assessment.setWeightPct(0.0);
+        assessment.setAiEnhanced(false);
+        assessment.setStatus("published");
+        assessment.setCreatedBy(student);
+        assessment.setLastModifiedBy(student);
+        Assessment savedAssessment = assessmentRepository.save(assessment);
+
+        AssessmentAssignment assignment = new AssessmentAssignment();
+        assignment.setAssessment(savedAssessment);
+        assignment.setAssignedBy(student);
+        assignment.setTitle(title);
+        assignment.setInstructions("mode=" + mode);
+        assignment.setStartTime(Instant.now());
+        assignment.setDueTime(Instant.now().plus(Duration.ofDays(7)));
+        assignment.setPublished(true);
+        AssessmentAssignment savedAssignment = assessmentAssignmentRepository.save(assignment);
+
+        AssessmentEnrollment enrollment = new AssessmentEnrollment();
+        enrollment.setAssessmentAssignment(savedAssignment);
+        enrollment.setStudent(student);
+        enrollment.setStatusCode("assigned");
+        AssessmentEnrollment savedEnrollment = assessmentEnrollmentRepository.save(enrollment);
+
+        List<AssessmentQuestion> assessmentQuestions = new ArrayList<>(selectedQuestions.size());
+        int sequence = 1;
+        for (Question question : selectedQuestions) {
+            AssessmentQuestion assessmentQuestion = new AssessmentQuestion();
+            assessmentQuestion.setAssessment(savedAssessment);
+            assessmentQuestion.setQuestion(question);
+            assessmentQuestion.setSequenceIndex(sequence++);
+            assessmentQuestion.setPoints(question.getMaxMark() == null ? 1.0 : question.getMaxMark());
+            assessmentQuestions.add(assessmentQuestion);
+        }
+        List<AssessmentQuestion> savedAssessmentQuestions = assessmentQuestionRepository.saveAll(assessmentQuestions);
+
+        AssessmentAttempt attempt = new AssessmentAttempt();
+        attempt.setAssessmentEnrollment(savedEnrollment);
+        attempt.setAttemptNumber(1);
+        attempt.setStartedAt(Instant.now());
+        attempt.setSubmissionType(mode);
+        attempt.setGradingStatusCode("pending");
+        attempt.setMaxScore(totalMaxScore);
+        AssessmentAttempt savedAttempt = assessmentAttemptRepository.save(attempt);
+
+        return buildPracticeSessionDto(
+            savedAttempt,
+            savedAssessmentQuestions,
+            List.of(),
+            mode,
+            title,
+            topic,
+            true
+        );
+    }
+
+    @Transactional
+    public StudentPracticeAnswerResultDto submitPracticeAnswer(UUID studentId,
+                                                               UUID sessionId,
+                                                               StudentPracticeAnswerRequest request) {
+        if (request == null || request.getAssessmentQuestionId() == null) {
+            throw new BadRequestException("assessmentQuestionId is required");
+        }
+
+        AssessmentAttempt attempt = assessmentAttemptRepository.findById(sessionId)
+            .orElseThrow(() -> new NotFoundException("Practice session not found: " + sessionId));
+        validateSessionOwner(studentId, attempt);
+
+        if (attempt.getSubmittedAt() != null) {
+            throw new BadRequestException("Practice session is already completed");
+        }
+
+        Assessment assessment = attempt.getAssessmentEnrollment().getAssessmentAssignment().getAssessment();
+        AssessmentQuestion assessmentQuestion = assessmentQuestionRepository
+            .findByIdAndAssessment_IdAndDeletedAtIsNull(request.getAssessmentQuestionId(), assessment.getId())
+            .orElseThrow(() -> new NotFoundException("Assessment question not found: " + request.getAssessmentQuestionId()));
+
+        AttemptAnswer answer = attemptAnswerRepository
+            .findByAssessmentAttempt_IdAndAssessmentQuestion_IdAndDeletedAtIsNull(sessionId, assessmentQuestion.getId())
+            .orElseGet(AttemptAnswer::new);
+        answer.setAssessmentAttempt(attempt);
+        answer.setAssessmentQuestion(assessmentQuestion);
+        answer.setStudentAnswerText(resolveStudentAnswerText(request));
+        answer.setStudentAnswerBlob(buildStudentAnswerBlob(request));
+        double questionMaxScore = resolveQuestionMaxScore(assessmentQuestion);
+        answer.setMaxScore(questionMaxScore);
+
+        PracticeEvaluation evaluation = evaluatePracticeAnswer(assessmentQuestion.getQuestion(), request, questionMaxScore);
+        if (evaluation.autoGraded) {
+            answer.setAiScore(evaluation.score);
+            answer.setAiConfidence(1.0);
+            answer.setRequiresReview(false);
+            answer.setGradedAt(Instant.now());
+        } else {
+            answer.setAiScore(null);
+            answer.setAiConfidence(null);
+            answer.setRequiresReview(true);
+            answer.setGradedAt(null);
+        }
+        answer.setFeedbackText(evaluation.feedback);
+
+        AttemptAnswer savedAnswer = attemptAnswerRepository.save(answer);
+
+        List<AssessmentQuestion> assessmentQuestions =
+            assessmentQuestionRepository.findByAssessment_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(assessment.getId());
+        List<AttemptAnswer> answers =
+            attemptAnswerRepository.findByAssessmentAttempt_IdAndDeletedAtIsNull(attempt.getId());
+        PracticeSessionMetrics metrics = calculatePracticeSessionMetrics(assessmentQuestions, answers, attempt);
+
+        return StudentPracticeAnswerResultDto.builder()
+            .sessionId(attempt.getId().toString())
+            .answerId(savedAnswer.getId().toString())
+            .assessmentQuestionId(assessmentQuestion.getId().toString())
+            .correct(evaluation.correct)
+            .skipped(request.isSkipped())
+            .score(evaluation.autoGraded ? roundOneDecimal(evaluation.score) : null)
+            .maxScore(roundOneDecimal(questionMaxScore))
+            .feedback(evaluation.feedback)
+            .gradedAt(savedAnswer.getGradedAt())
+            .answeredCount(metrics.answeredCount)
+            .totalQuestions(metrics.totalQuestions)
+            .correctCount(metrics.correctCount)
+            .sessionScore(roundOneDecimal(metrics.score))
+            .sessionMaxScore(roundOneDecimal(metrics.maxScore))
+            .sessionPercentage(metrics.maxScore > 0 ? roundOneDecimal((metrics.score / metrics.maxScore) * 100.0) : null)
+            .completed(metrics.answeredCount >= metrics.totalQuestions && metrics.totalQuestions > 0)
+            .build();
+    }
+
+    @Transactional
+    public StudentPracticeSessionDto completePracticeSession(UUID studentId, UUID sessionId) {
+        AssessmentAttempt attempt = assessmentAttemptRepository.findById(sessionId)
+            .orElseThrow(() -> new NotFoundException("Practice session not found: " + sessionId));
+        validateSessionOwner(studentId, attempt);
+
+        Assessment assessment = attempt.getAssessmentEnrollment().getAssessmentAssignment().getAssessment();
+        List<AssessmentQuestion> assessmentQuestions =
+            assessmentQuestionRepository.findByAssessment_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(assessment.getId());
+        List<AttemptAnswer> answers =
+            attemptAnswerRepository.findByAssessmentAttempt_IdAndDeletedAtIsNull(attempt.getId());
+        PracticeSessionMetrics metrics = calculatePracticeSessionMetrics(assessmentQuestions, answers, attempt);
+
+        if (attempt.getSubmittedAt() == null) {
+            attempt.setSubmittedAt(Instant.now());
+        }
+        attempt.setTotalScore(metrics.score);
+        attempt.setMaxScore(metrics.maxScore > 0 ? metrics.maxScore : attempt.getMaxScore());
+        attempt.setFinalScore(metrics.score);
+        attempt.setFinalGrade(toGradeLabel(metrics.maxScore > 0 ? (metrics.score / metrics.maxScore) * 100.0 : 0.0));
+        attempt.setGradingStatusCode("auto_graded");
+        AssessmentAttempt savedAttempt = assessmentAttemptRepository.save(attempt);
+
+        AssessmentEnrollment enrollment = savedAttempt.getAssessmentEnrollment();
+        if (enrollment != null) {
+            enrollment.setStatusCode("completed");
+            assessmentEnrollmentRepository.save(enrollment);
+            upsertPracticeResult(enrollment, savedAttempt, metrics);
+        }
+
+        String mode = normalizePracticeMode(savedAttempt.getSubmissionType());
+        return buildPracticeSessionDto(
+            savedAttempt,
+            assessmentQuestions,
+            answers,
+            mode,
+            savedAttempt.getAssessmentEnrollment().getAssessmentAssignment().getTitle(),
+            resolveSingleTopic(assessmentQuestions),
+            false
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<StudentPracticeSessionDto> getPracticeSessionHistory(UUID studentId, UUID subjectId, Integer limit) {
+        userRepository.findByIdAndDeletedAtIsNull(studentId)
+            .orElseThrow(() -> new NotFoundException("Student not found: " + studentId));
+
+        int safeLimit = limit == null ? 20 : Math.max(1, Math.min(100, limit));
+        List<AssessmentAttempt> attempts = assessmentAttemptRepository.findStudentSessionHistory(
+            studentId,
+            subjectId,
+            PRACTICE_SESSION_MODES
+        );
+        if (attempts.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> attemptIds = attempts.stream().map(AssessmentAttempt::getId).filter(Objects::nonNull).toList();
+        Map<UUID, AttemptMetrics> attemptMetrics = new HashMap<>();
+        if (!attemptIds.isEmpty()) {
+            for (Object[] row : attemptAnswerRepository.summarizeByAssessmentAttemptIds(attemptIds)) {
+                if (row == null || row.length < 5 || row[0] == null) {
+                    continue;
+                }
+                UUID attemptId = (UUID) row[0];
+                int answeredCount = ((Number) row[1]).intValue();
+                int correctCount = ((Number) row[2]).intValue();
+                double score = row[3] == null ? 0.0 : ((Number) row[3]).doubleValue();
+                double maxScore = row[4] == null ? 0.0 : ((Number) row[4]).doubleValue();
+                attemptMetrics.put(attemptId, new AttemptMetrics(answeredCount, correctCount, score, maxScore));
+            }
+        }
+
+        List<UUID> assessmentIds = attempts.stream()
+            .map(AssessmentAttempt::getAssessmentEnrollment)
+            .filter(Objects::nonNull)
+            .map(AssessmentEnrollment::getAssessmentAssignment)
+            .filter(Objects::nonNull)
+            .map(AssessmentAssignment::getAssessment)
+            .filter(Objects::nonNull)
+            .map(Assessment::getId)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+        Map<UUID, Integer> questionCountByAssessment = new HashMap<>();
+        if (!assessmentIds.isEmpty()) {
+            for (Object[] row : assessmentQuestionRepository.countByAssessmentIds(assessmentIds)) {
+                if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
+                    continue;
+                }
+                questionCountByAssessment.put((UUID) row[0], ((Number) row[1]).intValue());
+            }
+        }
+
+        return attempts.stream()
+            .limit(safeLimit)
+            .map(attempt -> {
+                AssessmentEnrollment enrollment = attempt.getAssessmentEnrollment();
+                AssessmentAssignment assignment = enrollment.getAssessmentAssignment();
+                Assessment assessment = assignment.getAssessment();
+                AttemptMetrics metrics = attemptMetrics.getOrDefault(attempt.getId(), AttemptMetrics.ZERO);
+                Integer questionCount = questionCountByAssessment.getOrDefault(
+                    assessment.getId(),
+                    metrics.answeredCount > 0 ? metrics.answeredCount : 0
+                );
+                Integer durationMinutes = resolveDurationMinutes(attempt.getStartedAt(), attempt.getSubmittedAt());
+                double score = attempt.getFinalScore() != null
+                    ? attempt.getFinalScore()
+                    : attempt.getTotalScore() != null ? attempt.getTotalScore() : metrics.score;
+                double maxScore = attempt.getMaxScore() != null && attempt.getMaxScore() > 0
+                    ? attempt.getMaxScore()
+                    : metrics.maxScore;
+                String title = assignment.getTitle() != null && !assignment.getTitle().isBlank()
+                    ? assignment.getTitle()
+                    : assessment.getName();
+                return StudentPracticeSessionDto.builder()
+                    .sessionId(attempt.getId().toString())
+                    .assessmentId(assessment.getId().toString())
+                    .assignmentId(assignment.getId().toString())
+                    .enrollmentId(enrollment.getId().toString())
+                    .subjectId(assessment.getSubject().getId().toString())
+                    .subjectName(assessment.getSubject().getName())
+                    .topicId(null)
+                    .topicName(null)
+                    .mode(normalizePracticeMode(attempt.getSubmissionType()))
+                    .title(title)
+                    .status(attempt.getSubmittedAt() == null ? "in_progress" : "completed")
+                    .startedAt(attempt.getStartedAt())
+                    .submittedAt(attempt.getSubmittedAt())
+                    .questionCount(questionCount)
+                    .answeredCount(metrics.answeredCount)
+                    .correctCount(metrics.correctCount)
+                    .score(roundOneDecimal(score))
+                    .maxScore(maxScore > 0 ? roundOneDecimal(maxScore) : null)
+                    .percentage(maxScore > 0 ? roundOneDecimal((score / maxScore) * 100.0) : null)
+                    .durationMinutes(durationMinutes)
+                    .questions(List.of())
+                    .build();
+            })
+            .toList();
+    }
+
+    @Transactional
+    public StudentPlanRuntimeProgressDto updateStudentPlanRuntime(UUID studentId,
+                                                                  UUID studentPlanId,
+                                                                  StudentPlanRuntimeProgressRequest request) {
+        StudentPlan studentPlan = studentPlanRepository.findByIdAndStudent_IdAndDeletedAtIsNull(studentPlanId, studentId)
+            .orElseThrow(() -> new NotFoundException("Student plan not found: " + studentPlanId));
+        if (request == null) {
+            throw new BadRequestException("Request payload is required");
+        }
+
+        List<PlanStep> planSteps = planStepRepository.findByPlan_IdOrderByStepOrderAsc(studentPlan.getPlan().getId());
+        Set<String> validStepIds = planSteps.stream()
+            .map(PlanStep::getId)
+            .filter(Objects::nonNull)
+            .map(UUID::toString)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        List<String> completedStepIds = (request.getCompletedStepIds() == null ? List.<String>of() : request.getCompletedStepIds()).stream()
+            .filter(Objects::nonNull)
+            .map(String::trim)
+            .filter(id -> !id.isBlank() && validStepIds.contains(id))
+            .distinct()
+            .toList();
+
+        String activeStepId = request.getActiveStepId();
+        if (activeStepId != null) {
+            activeStepId = activeStepId.trim();
+            if (activeStepId.isBlank() || !validStepIds.contains(activeStepId)) {
+                activeStepId = null;
+            }
+        }
+
+        int totalSteps = planSteps.size();
+        int completedSteps = Math.min(completedStepIds.size(), totalSteps);
+        double progress = totalSteps == 0 ? 0.0 : roundOneDecimal((completedSteps * 100.0) / totalSteps);
+        studentPlan.setCurrentProgress(progress);
+
+        if (request.getStatus() != null && !request.getStatus().isBlank()) {
+            studentPlan.setStatus(normalizePlanRuntimeStatus(request.getStatus()));
+        }
+        if (progress >= 100.0) {
+            studentPlan.setStatus("completed");
+            studentPlan.setCompletionDate(studentPlan.getCompletionDate() == null ? Instant.now() : studentPlan.getCompletionDate());
+        } else if ("completed".equalsIgnoreCase(studentPlan.getStatus())) {
+            studentPlan.setStatus("active");
+            studentPlan.setCompletionDate(null);
+        }
+
+        StudentPlan savedPlan = studentPlanRepository.save(studentPlan);
+        return StudentPlanRuntimeProgressDto.builder()
+            .studentPlanId(savedPlan.getId().toString())
+            .studentId(savedPlan.getStudent().getId().toString())
+            .activeStepId(activeStepId)
+            .completedStepIds(completedStepIds)
+            .totalSteps(totalSteps)
+            .completedSteps(completedSteps)
+            .currentProgress(roundOneDecimal(savedPlan.getCurrentProgress() == null ? 0.0 : savedPlan.getCurrentProgress()))
+            .status(savedPlan.getStatus())
+            .updatedAt(savedPlan.getUpdatedAt())
             .build();
     }
 
@@ -569,6 +1140,433 @@ public class StudentService {
         }
     }
 
+    private String normalizePracticeMode(String value) {
+        if (value == null || value.isBlank()) {
+            return "topic_practice";
+        }
+        String normalized = value.trim().toLowerCase().replace('-', '_').replace(' ', '_');
+        return PRACTICE_SESSION_MODES.contains(normalized) ? normalized : "topic_practice";
+    }
+
+    private int clampQuestionCount(Integer value) {
+        if (value == null) {
+            return DEFAULT_PRACTICE_QUESTION_COUNT;
+        }
+        return Math.max(1, Math.min(MAX_PRACTICE_QUESTION_COUNT, value));
+    }
+
+    private Topic resolvePracticeTopic(UUID subjectId, UUID topicId) {
+        if (topicId == null) {
+            return null;
+        }
+        Topic topic = topicRepository.findById(topicId)
+            .orElseThrow(() -> new NotFoundException("Topic not found: " + topicId));
+        if (topic.getDeletedAt() != null || topic.getSubject() == null || !topic.getSubject().getId().equals(subjectId)) {
+            throw new BadRequestException("Topic does not belong to selected subject");
+        }
+        return topic;
+    }
+
+    private List<Question> resolvePracticeQuestions(UUID subjectId, Topic topic, int questionCount) {
+        List<Question> questionPool = topic == null
+            ? questionRepository.findBySubject_IdAndDeletedAtIsNull(subjectId)
+            : questionRepository.findBySubject_IdAndTopic_IdAndDeletedAtIsNull(subjectId, topic.getId());
+        List<Question> activeQuestions = questionPool.stream()
+            .filter(question -> question.getDeletedAt() == null)
+            .filter(Question::isActive)
+            .toList();
+        if (activeQuestions.isEmpty()) {
+            throw new BadRequestException("No published questions are available for this practice session.");
+        }
+
+        List<Question> shuffledQuestions = new ArrayList<>(activeQuestions);
+        Collections.shuffle(shuffledQuestions);
+        int count = Math.min(questionCount, shuffledQuestions.size());
+        return shuffledQuestions.subList(0, count);
+    }
+
+    private School resolveStudentSchool(UUID studentId) {
+        return enrolmentRepository.findActiveSchoolIdsByStudentId(studentId).stream()
+            .findFirst()
+            .flatMap(schoolRepository::findByIdAndDeletedAtIsNull)
+            .or(() -> schoolRepository.findFirstByDeletedAtIsNullOrderByCreatedAtAsc())
+            .orElseThrow(() -> new BadRequestException("No active school found for student " + studentId));
+    }
+
+    private String resolvePracticeTitle(Subject subject, Topic topic, String requestTitle, String mode) {
+        if (requestTitle != null && !requestTitle.isBlank()) {
+            return requestTitle.trim();
+        }
+        String subjectName = subject.getName() == null ? "Subject" : subject.getName();
+        if ("subject_challenge".equals(mode)) {
+            return "Subject challenge: " + subjectName;
+        }
+        if (topic != null && topic.getName() != null && !topic.getName().isBlank()) {
+            return ("topic_challenge".equals(mode) ? "Topic challenge: " : "Practice: ") + topic.getName().trim();
+        }
+        return ("topic_challenge".equals(mode) ? "Topic challenge: " : "Practice: ") + subjectName;
+    }
+
+    private void validateSessionOwner(UUID studentId, AssessmentAttempt attempt) {
+        if (attempt == null
+            || attempt.getAssessmentEnrollment() == null
+            || attempt.getAssessmentEnrollment().getStudent() == null
+            || attempt.getAssessmentEnrollment().getStudent().getId() == null
+            || !attempt.getAssessmentEnrollment().getStudent().getId().equals(studentId)) {
+            throw new NotFoundException("Practice session not found");
+        }
+    }
+
+    private String resolveStudentAnswerText(StudentPracticeAnswerRequest request) {
+        if (request.getStudentAnswerText() != null && !request.getStudentAnswerText().isBlank()) {
+            return request.getStudentAnswerText().trim();
+        }
+        if (request.getSelectedOptions() != null && !request.getSelectedOptions().isEmpty()) {
+            return request.getSelectedOptions().stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .collect(Collectors.joining(" | "));
+        }
+        return null;
+    }
+
+    private JsonNode buildStudentAnswerBlob(StudentPracticeAnswerRequest request) {
+        if (request.getSelectedOptions() == null || request.getSelectedOptions().isEmpty()) {
+            return null;
+        }
+        ObjectNode node = objectMapper.createObjectNode();
+        node.putPOJO("selectedOptions", request.getSelectedOptions());
+        return node;
+    }
+
+    private double resolveQuestionMaxScore(AssessmentQuestion assessmentQuestion) {
+        if (assessmentQuestion.getPoints() != null && assessmentQuestion.getPoints() > 0) {
+            return assessmentQuestion.getPoints();
+        }
+        if (assessmentQuestion.getQuestion() != null
+            && assessmentQuestion.getQuestion().getMaxMark() != null
+            && assessmentQuestion.getQuestion().getMaxMark() > 0) {
+            return assessmentQuestion.getQuestion().getMaxMark();
+        }
+        return 1.0;
+    }
+
+    private PracticeEvaluation evaluatePracticeAnswer(Question question,
+                                                      StudentPracticeAnswerRequest request,
+                                                      double questionMaxScore) {
+        if (request.isSkipped()) {
+            return new PracticeEvaluation(false, true, 0.0, true, "Question skipped.");
+        }
+
+        List<String> expectedAnswers = extractExpectedAnswers(question);
+        if (expectedAnswers.isEmpty()) {
+            return new PracticeEvaluation(false, false, 0.0, false, "Submitted for review.");
+        }
+
+        List<String> submittedAnswers = new ArrayList<>();
+        if (request.getSelectedOptions() != null) {
+            request.getSelectedOptions().stream()
+                .filter(Objects::nonNull)
+                .map(this::normalizeAnswer)
+                .filter(value -> !value.isBlank())
+                .forEach(submittedAnswers::add);
+        }
+        if ((submittedAnswers.isEmpty()) && request.getStudentAnswerText() != null) {
+            String text = normalizeAnswer(request.getStudentAnswerText());
+            if (!text.isBlank()) {
+                submittedAnswers.add(text);
+            }
+        }
+
+        boolean multipleAnswerCheck = expectedAnswers.size() > 1 || submittedAnswers.size() > 1;
+        boolean correct;
+        if (multipleAnswerCheck) {
+            Set<String> submittedSet = new LinkedHashSet<>(submittedAnswers);
+            Set<String> expectedSet = new LinkedHashSet<>(expectedAnswers);
+            correct = !submittedSet.isEmpty() && submittedSet.equals(expectedSet);
+        } else {
+            correct = submittedAnswers.stream().anyMatch(expectedAnswers::contains);
+        }
+
+        double score = correct ? questionMaxScore : 0.0;
+        return new PracticeEvaluation(correct, false, score, true, correct ? "Correct." : "Not correct. Try again.");
+    }
+
+    private List<String> extractExpectedAnswers(Question question) {
+        if (question == null || question.getRubricJson() == null || question.getRubricJson().isNull()) {
+            return List.of();
+        }
+
+        List<String> answers = new ArrayList<>();
+        JsonNode rubricJson = question.getRubricJson();
+        JsonNode direct = rubricJson.path("correctAnswer");
+        appendAnswerValues(answers, direct);
+        appendAnswerValues(answers, rubricJson.path("correct_answer"));
+        appendAnswerValues(answers, rubricJson.path("answer"));
+        appendAnswerValues(answers, rubricJson.path("answers"));
+
+        JsonNode options = rubricJson.path("options");
+        if (options.isArray()) {
+            options.forEach(option -> {
+                if (option != null && option.isObject() && option.path("isCorrect").asBoolean(false)) {
+                    String text = option.path("text").asText("");
+                    if (!text.isBlank()) {
+                        answers.add(text);
+                    }
+                }
+            });
+        }
+
+        return answers.stream()
+            .map(this::normalizeAnswer)
+            .filter(value -> !value.isBlank())
+            .distinct()
+            .toList();
+    }
+
+    private void appendAnswerValues(List<String> sink, JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return;
+        }
+        if (node.isArray()) {
+            node.forEach(item -> appendAnswerValues(sink, item));
+            return;
+        }
+        if (node.isTextual()) {
+            String value = node.asText();
+            if (value != null && !value.isBlank()) {
+                sink.add(value);
+            }
+            return;
+        }
+        if (node.isNumber() || node.isBoolean()) {
+            sink.add(node.asText());
+        }
+    }
+
+    private String normalizeAnswer(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim().toLowerCase().replaceAll("\\s+", " ");
+    }
+
+    private PracticeSessionMetrics calculatePracticeSessionMetrics(List<AssessmentQuestion> assessmentQuestions,
+                                                                   List<AttemptAnswer> answers,
+                                                                   AssessmentAttempt attempt) {
+        int totalQuestions = assessmentQuestions == null ? 0 : assessmentQuestions.size();
+        int answeredCount = answers == null ? 0 : answers.size();
+        int correctCount = 0;
+        double score = 0.0;
+        double maxScore = 0.0;
+
+        if (answers != null) {
+            for (AttemptAnswer answer : answers) {
+                double answerMax = answer.getMaxScore() == null ? 0.0 : answer.getMaxScore();
+                double answerScore = answer.getHumanScore() != null
+                    ? answer.getHumanScore()
+                    : answer.getAiScore() != null ? answer.getAiScore() : 0.0;
+                maxScore += answerMax;
+                score += answerScore;
+                if (answerMax > 0 && answerScore >= answerMax) {
+                    correctCount += 1;
+                }
+            }
+        }
+
+        if (maxScore <= 0 && attempt.getMaxScore() != null) {
+            maxScore = attempt.getMaxScore();
+        }
+        if (score <= 0 && attempt.getTotalScore() != null) {
+            score = attempt.getTotalScore();
+        }
+
+        return new PracticeSessionMetrics(totalQuestions, answeredCount, correctCount, score, maxScore);
+    }
+
+    private Integer resolveDurationMinutes(Instant startedAt, Instant submittedAt) {
+        if (startedAt == null || submittedAt == null || submittedAt.isBefore(startedAt)) {
+            return null;
+        }
+        return (int) Math.max(0, Duration.between(startedAt, submittedAt).toMinutes());
+    }
+
+    private void upsertPracticeResult(AssessmentEnrollment enrollment,
+                                      AssessmentAttempt finalizedAttempt,
+                                      PracticeSessionMetrics metrics) {
+        AssessmentResult result = assessmentResultRepository
+            .findFirstByAssessmentAssignment_IdAndStudent_Id(
+                enrollment.getAssessmentAssignment().getId(),
+                enrollment.getStudent().getId()
+            )
+            .orElseGet(AssessmentResult::new);
+
+        result.setAssessmentAssignment(enrollment.getAssessmentAssignment());
+        result.setStudent(enrollment.getStudent());
+        result.setFinalizedAttempt(finalizedAttempt);
+        result.setExpectedMark(metrics.maxScore);
+        result.setActualMark(metrics.score);
+        result.setGrade(toGradeLabel(metrics.maxScore > 0 ? (metrics.score / metrics.maxScore) * 100.0 : 0.0));
+        result.setSubmittedAt(finalizedAttempt.getSubmittedAt());
+        result.setGradedAt(Instant.now());
+        result.setStatus("published");
+        assessmentResultRepository.save(result);
+    }
+
+    private String toGradeLabel(double percentage) {
+        if (percentage >= 80) {
+            return "A";
+        }
+        if (percentage >= 70) {
+            return "B";
+        }
+        if (percentage >= 60) {
+            return "C";
+        }
+        if (percentage >= 50) {
+            return "D";
+        }
+        return "U";
+    }
+
+    private Topic resolveSingleTopic(List<AssessmentQuestion> questions) {
+        if (questions == null || questions.isEmpty()) {
+            return null;
+        }
+        Topic topic = null;
+        for (AssessmentQuestion question : questions) {
+            Topic candidate = question.getQuestion() != null ? question.getQuestion().getTopic() : null;
+            if (candidate == null) {
+                return null;
+            }
+            if (topic == null) {
+                topic = candidate;
+                continue;
+            }
+            if (!topic.getId().equals(candidate.getId())) {
+                return null;
+            }
+        }
+        return topic;
+    }
+
+    private StudentPracticeSessionDto buildPracticeSessionDto(AssessmentAttempt attempt,
+                                                              List<AssessmentQuestion> assessmentQuestions,
+                                                              List<AttemptAnswer> answers,
+                                                              String mode,
+                                                              String title,
+                                                              Topic topic,
+                                                              boolean includeQuestions) {
+        AssessmentEnrollment enrollment = attempt.getAssessmentEnrollment();
+        AssessmentAssignment assignment = enrollment.getAssessmentAssignment();
+        Assessment assessment = assignment.getAssessment();
+        PracticeSessionMetrics metrics = calculatePracticeSessionMetrics(assessmentQuestions, answers, attempt);
+        Integer durationMinutes = resolveDurationMinutes(attempt.getStartedAt(), attempt.getSubmittedAt());
+        double maxScore = metrics.maxScore > 0 ? metrics.maxScore : (attempt.getMaxScore() == null ? 0.0 : attempt.getMaxScore());
+        double score = metrics.score > 0 ? metrics.score : (attempt.getTotalScore() == null ? 0.0 : attempt.getTotalScore());
+
+        List<StudentPracticeQuestionDto> questionDtos = includeQuestions
+            ? assessmentQuestions.stream().map(this::toPracticeQuestionDto).toList()
+            : List.of();
+
+        return StudentPracticeSessionDto.builder()
+            .sessionId(attempt.getId().toString())
+            .assessmentId(assessment.getId().toString())
+            .assignmentId(assignment.getId().toString())
+            .enrollmentId(enrollment.getId().toString())
+            .subjectId(assessment.getSubject().getId().toString())
+            .subjectName(assessment.getSubject().getName())
+            .topicId(topic != null && topic.getId() != null ? topic.getId().toString() : null)
+            .topicName(topic != null ? topic.getName() : null)
+            .mode(normalizePracticeMode(mode))
+            .title(title)
+            .status(attempt.getSubmittedAt() == null ? "in_progress" : "completed")
+            .startedAt(attempt.getStartedAt())
+            .submittedAt(attempt.getSubmittedAt())
+            .questionCount(metrics.totalQuestions)
+            .answeredCount(metrics.answeredCount)
+            .correctCount(metrics.correctCount)
+            .score(roundOneDecimal(score))
+            .maxScore(maxScore > 0 ? roundOneDecimal(maxScore) : null)
+            .percentage(maxScore > 0 ? roundOneDecimal((score / maxScore) * 100.0) : null)
+            .durationMinutes(durationMinutes)
+            .questions(questionDtos)
+            .build();
+    }
+
+    private StudentPracticeQuestionDto toPracticeQuestionDto(AssessmentQuestion assessmentQuestion) {
+        Question question = assessmentQuestion.getQuestion();
+        List<String> optionTexts = extractOptionTexts(question);
+        List<String> expectedAnswers = extractExpectedAnswers(question);
+        boolean multipleSelection = optionTexts.size() > 0 && expectedAnswers.size() > 1;
+        String questionType = optionTexts.isEmpty() ? "input" : (multipleSelection ? "multiple" : "single");
+
+        Topic topic = question.getTopic();
+        return StudentPracticeQuestionDto.builder()
+            .assessmentQuestionId(assessmentQuestion.getId().toString())
+            .questionId(question.getId().toString())
+            .topicId(topic != null && topic.getId() != null ? topic.getId().toString() : null)
+            .topicName(topic != null ? topic.getName() : null)
+            .prompt(question.getStem())
+            .questionType(questionType)
+            .maxScore(roundOneDecimal(resolveQuestionMaxScore(assessmentQuestion)))
+            .options(optionTexts)
+            .multipleSelection(multipleSelection)
+            .build();
+    }
+
+    private List<String> extractOptionTexts(Question question) {
+        if (question == null || question.getRubricJson() == null || question.getRubricJson().isNull()) {
+            return List.of();
+        }
+        JsonNode options = question.getRubricJson().path("options");
+        if (!options.isArray()) {
+            if ("true_false".equalsIgnoreCase(question.getQuestionTypeCode())) {
+                return List.of("True", "False");
+            }
+            return List.of();
+        }
+
+        List<String> result = new ArrayList<>();
+        options.forEach(option -> {
+            if (option == null || option.isNull()) {
+                return;
+            }
+            if (option.isTextual()) {
+                String value = option.asText();
+                if (value != null && !value.isBlank()) {
+                    result.add(value);
+                }
+                return;
+            }
+            if (option.isObject()) {
+                String text = option.path("text").asText("");
+                if (text.isBlank()) {
+                    text = option.path("label").asText("");
+                }
+                if (text.isBlank()) {
+                    text = option.path("value").asText("");
+                }
+                if (!text.isBlank()) {
+                    result.add(text);
+                }
+            }
+        });
+        return result;
+    }
+
+    private String normalizePlanRuntimeStatus(String status) {
+        String normalized = status == null ? "" : status.trim().toLowerCase();
+        return switch (normalized) {
+            case "active", "in_progress", "in-progress" -> "active";
+            case "completed", "done" -> "completed";
+            case "cancelled", "canceled" -> "cancelled";
+            case "on_hold", "on hold", "paused" -> "on_hold";
+            default -> "active";
+        };
+    }
+
     private List<StudentDto> listByClassSubject(UUID classSubjectId) {
         List<User> students = studentSubjectEnrolmentRepository.findDistinctStudentsByClassSubjectId(classSubjectId);
         if (students.isEmpty()) {
@@ -946,6 +1944,93 @@ public class StudentService {
 
     private double roundOneDecimal(double value) {
         return Math.round(value * 10.0) / 10.0;
+    }
+
+    private String resolveAttemptLevel(AssessmentAttempt attempt) {
+        if (attempt == null) {
+            return null;
+        }
+
+        if (attempt.getFinalGrade() != null && !attempt.getFinalGrade().isBlank()) {
+            return attempt.getFinalGrade().trim();
+        }
+
+        if (attempt.getGradingStatusCode() != null && !attempt.getGradingStatusCode().isBlank()) {
+            return attempt.getGradingStatusCode().trim().toLowerCase().replace('_', ' ');
+        }
+
+        Double score = attempt.getFinalScore() != null ? attempt.getFinalScore() : attempt.getTotalScore();
+        Double maxScore = attempt.getMaxScore();
+        if (score == null || maxScore == null || maxScore <= 0) {
+            return null;
+        }
+        double percent = (score / maxScore) * 100.0;
+        if (percent >= 80) {
+            return "excellent";
+        }
+        if (percent >= 65) {
+            return "good";
+        }
+        if (percent >= 50) {
+            return "average";
+        }
+        return "needs support";
+    }
+
+    private static final class AttemptMetrics {
+        private static final AttemptMetrics ZERO = new AttemptMetrics(0, 0, 0.0, 0.0);
+
+        private final int answeredCount;
+        private final int correctCount;
+        private final double score;
+        private final double maxScore;
+
+        private AttemptMetrics(int answeredCount, int correctCount, double score, double maxScore) {
+            this.answeredCount = answeredCount;
+            this.correctCount = correctCount;
+            this.score = score;
+            this.maxScore = maxScore;
+        }
+    }
+
+    private static final class PracticeEvaluation {
+        private final boolean correct;
+        private final boolean skipped;
+        private final double score;
+        private final boolean autoGraded;
+        private final String feedback;
+
+        private PracticeEvaluation(boolean correct,
+                                   boolean skipped,
+                                   double score,
+                                   boolean autoGraded,
+                                   String feedback) {
+            this.correct = correct;
+            this.skipped = skipped;
+            this.score = score;
+            this.autoGraded = autoGraded;
+            this.feedback = feedback;
+        }
+    }
+
+    private static final class PracticeSessionMetrics {
+        private final int totalQuestions;
+        private final int answeredCount;
+        private final int correctCount;
+        private final double score;
+        private final double maxScore;
+
+        private PracticeSessionMetrics(int totalQuestions,
+                                       int answeredCount,
+                                       int correctCount,
+                                       double score,
+                                       double maxScore) {
+            this.totalQuestions = totalQuestions;
+            this.answeredCount = answeredCount;
+            this.correctCount = correctCount;
+            this.score = score;
+            this.maxScore = maxScore;
+        }
     }
 
     private static final class TeacherAccumulator {

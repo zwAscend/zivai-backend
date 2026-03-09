@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -15,6 +16,14 @@ import org.springframework.data.repository.query.Param;
 import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentAttempt;
 
 public interface AssessmentAttemptRepository extends JpaRepository<AssessmentAttempt, UUID> {
+    @EntityGraph(attributePaths = {
+        "assessmentEnrollment",
+        "assessmentEnrollment.student",
+        "assessmentEnrollment.assessmentAssignment",
+        "assessmentEnrollment.assessmentAssignment.assessment",
+        "assessmentEnrollment.assessmentAssignment.assessment.subject",
+        "assessmentEnrollment.assessmentAssignment.classEntity"
+    })
     List<AssessmentAttempt> findByAssessmentEnrollment_Student_Id(UUID studentId);
     List<AssessmentAttempt> findByAssessmentEnrollment_AssessmentAssignment_Id(UUID assessmentAssignmentId);
     Optional<AssessmentAttempt> findTopByAssessmentEnrollment_IdOrderByAttemptNumberDesc(UUID assessmentEnrollmentId);
@@ -166,4 +175,58 @@ public interface AssessmentAttemptRepository extends JpaRepository<AssessmentAtt
           and (:subjectId is null or a.subject.id = :subjectId)
     """)
     Object[] fetchGradingStats(@Param("subjectId") UUID subjectId);
+
+    @Query("""
+        select at
+        from AssessmentAttempt at
+        join fetch at.assessmentEnrollment ae
+        join fetch ae.assessmentAssignment aa
+        join fetch aa.assessment a
+        join fetch a.subject s
+        where ae.student.id = :studentId
+          and at.submittedAt is not null
+          and at.deletedAt is null
+          and ae.deletedAt is null
+          and aa.deletedAt is null
+          and a.deletedAt is null
+          and s.deletedAt is null
+          and (:subjectId is null or s.id = :subjectId)
+          and (:applyFrom = false or at.submittedAt >= :fromDate)
+          and (:applyTo = false or at.submittedAt <= :toDate)
+        order by at.submittedAt desc, at.createdAt desc
+    """)
+    List<AssessmentAttempt> findSubmittedHistoryByStudent(@Param("studentId") UUID studentId,
+                                                          @Param("subjectId") UUID subjectId,
+                                                          @Param("applyFrom") boolean applyFrom,
+                                                          @Param("fromDate") Instant fromDate,
+                                                          @Param("applyTo") boolean applyTo,
+                                                          @Param("toDate") Instant toDate);
+
+    @EntityGraph(attributePaths = {
+        "assessmentEnrollment",
+        "assessmentEnrollment.student",
+        "assessmentEnrollment.assessmentAssignment",
+        "assessmentEnrollment.assessmentAssignment.assessment",
+        "assessmentEnrollment.assessmentAssignment.assessment.subject"
+    })
+    @Query("""
+        select at
+        from AssessmentAttempt at
+        join at.assessmentEnrollment ae
+        join ae.assessmentAssignment aa
+        join aa.assessment a
+        join a.subject s
+        where ae.student.id = :studentId
+          and at.deletedAt is null
+          and ae.deletedAt is null
+          and aa.deletedAt is null
+          and a.deletedAt is null
+          and s.deletedAt is null
+          and at.submissionType in :submissionTypes
+          and (:subjectId is null or s.id = :subjectId)
+        order by coalesce(at.submittedAt, at.startedAt) desc, at.createdAt desc
+    """)
+    List<AssessmentAttempt> findStudentSessionHistory(@Param("studentId") UUID studentId,
+                                                      @Param("subjectId") UUID subjectId,
+                                                      @Param("submissionTypes") Collection<String> submissionTypes);
 }
