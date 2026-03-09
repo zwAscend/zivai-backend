@@ -668,6 +668,8 @@ public class SubmissionService {
                 .orElse(null);
         }
 
+        AssessmentResult resultForAttempt = findResultForAttempt(attempt);
+
         Object externalData = parseExternalJson(answer != null ? answer.getExternalAssessmentData() : null);
         Double totalScore = attempt.getTotalScore();
         Double maxScore = assessment.getMaxScore();
@@ -677,9 +679,8 @@ public class SubmissionService {
 
         String grade = attempt.getFinalGrade();
         if (grade == null) {
-            AssessmentResult result = findResultForAttempt(attempt);
-            if (result != null) {
-                grade = result.getGrade();
+            if (resultForAttempt != null) {
+                grade = resultForAttempt.getGrade();
             }
         }
 
@@ -688,9 +689,8 @@ public class SubmissionService {
             feedback = answer.getFeedbackText();
         }
         if (feedback == null) {
-            AssessmentResult result = findResultForAttempt(attempt);
-            if (result != null) {
-                feedback = result.getFeedback();
+            if (resultForAttempt != null) {
+                feedback = resultForAttempt.getFeedback();
             }
         }
 

@@ -2,6 +2,7 @@ package zw.co.zivai.core_backend.common.repositories.assessments;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +15,8 @@ import zw.co.zivai.core_backend.common.dtos.assessments.SubjectTopicAnswerStat;
 
 public interface AttemptAnswerRepository extends JpaRepository<AttemptAnswer, UUID> {
     List<AttemptAnswer> findByAssessmentAttempt_Id(UUID assessmentAttemptId);
+    List<AttemptAnswer> findByAssessmentAttempt_IdAndDeletedAtIsNull(UUID assessmentAttemptId);
+    Optional<AttemptAnswer> findByAssessmentAttempt_IdAndAssessmentQuestion_IdAndDeletedAtIsNull(UUID assessmentAttemptId, UUID assessmentQuestionId);
     Optional<AttemptAnswer> findFirstByAssessmentAttempt_IdOrderByCreatedAtAsc(UUID assessmentAttemptId);
     long countByAssessmentAttempt_Id(UUID assessmentAttemptId);
     @Query("""
@@ -96,4 +99,18 @@ public interface AttemptAnswerRepository extends JpaRepository<AttemptAnswer, UU
           and ae.deletedAt is null
     """)
     List<SubjectTopicAnswerStat> findTopicStatsByStudent(@Param("studentId") UUID studentId);
+
+    @Query("""
+        select
+            aa.assessmentAttempt.id,
+            count(aa.id),
+            sum(case when coalesce(aa.humanScore, aa.aiScore, 0) >= aa.maxScore and aa.maxScore > 0 then 1 else 0 end),
+            sum(coalesce(aa.humanScore, aa.aiScore, 0)),
+            sum(coalesce(aa.maxScore, 0))
+        from AttemptAnswer aa
+        where aa.assessmentAttempt.id in :attemptIds
+          and aa.deletedAt is null
+        group by aa.assessmentAttempt.id
+    """)
+    List<Object[]> summarizeByAssessmentAttemptIds(@Param("attemptIds") Collection<UUID> attemptIds);
 }

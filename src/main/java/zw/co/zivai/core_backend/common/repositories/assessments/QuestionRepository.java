@@ -11,6 +11,7 @@ import zw.co.zivai.core_backend.common.models.lms.resources.Question;
 
 public interface QuestionRepository extends JpaRepository<Question, UUID> {
     List<Question> findBySubject_IdAndDeletedAtIsNull(UUID subjectId);
+    List<Question> findBySubject_IdAndTopic_IdAndDeletedAtIsNull(UUID subjectId, UUID topicId);
 
     @Query("""
         select q.topic.id, count(q.id)

@@ -50,12 +50,14 @@ public interface AssessmentEnrollmentRepository extends JpaRepository<Assessment
           and a.deletedAt is null
           and s.deletedAt is null
           and (:subjectId is null or s.id = :subjectId)
-          and (:fromDate is null or aa.dueTime >= :fromDate)
-          and (:toDate is null or aa.dueTime <= :toDate)
+          and (:applyFrom = false or aa.dueTime >= :fromDate)
+          and (:applyTo = false or aa.dueTime <= :toDate)
     """)
     List<AssessmentEnrollment> findStudentHistory(@Param("studentId") UUID studentId,
                                                   @Param("subjectId") UUID subjectId,
+                                                  @Param("applyFrom") boolean applyFrom,
                                                   @Param("fromDate") Instant fromDate,
+                                                  @Param("applyTo") boolean applyTo,
                                                   @Param("toDate") Instant toDate);
 
     @Query("""
