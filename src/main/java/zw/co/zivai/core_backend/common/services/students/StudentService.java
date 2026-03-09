@@ -1169,12 +1169,9 @@ public class StudentService {
 
     private List<Question> resolvePracticeQuestions(UUID subjectId, Topic topic, int questionCount) {
         List<Question> questionPool = topic == null
-            ? questionRepository.findBySubject_IdAndDeletedAtIsNull(subjectId)
-            : questionRepository.findBySubject_IdAndTopic_IdAndDeletedAtIsNull(subjectId, topic.getId());
-        List<Question> activeQuestions = questionPool.stream()
-            .filter(question -> question.getDeletedAt() == null)
-            .filter(Question::isActive)
-            .toList();
+            ? questionRepository.findBySubject_IdAndActiveTrueAndDeletedAtIsNull(subjectId)
+            : questionRepository.findBySubject_IdAndTopic_IdAndActiveTrueAndDeletedAtIsNull(subjectId, topic.getId());
+        List<Question> activeQuestions = questionPool.stream().toList();
         if (activeQuestions.isEmpty()) {
             throw new BadRequestException("No published questions are available for this practice session.");
         }

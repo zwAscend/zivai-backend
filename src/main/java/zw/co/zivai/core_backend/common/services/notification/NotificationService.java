@@ -168,8 +168,7 @@ public class NotificationService {
                 || FALLBACK_NOTIF_TYPE.equalsIgnoreCase(notification.getNotifType())) {
                 throw ex;
             }
-            notification.setNotifType(FALLBACK_NOTIF_TYPE);
-            return notificationRepository.save(notification);
+            return notificationRepository.save(copyForRetry(notification, FALLBACK_NOTIF_TYPE));
         }
     }
 
@@ -185,9 +184,26 @@ public class NotificationService {
             if (alreadyFallback) {
                 throw ex;
             }
-            notifications.forEach(notification -> notification.setNotifType(FALLBACK_NOTIF_TYPE));
-            return notificationRepository.saveAll(notifications);
+            List<Notification> retries = notifications.stream()
+                .map(notification -> copyForRetry(notification, FALLBACK_NOTIF_TYPE))
+                .toList();
+            return notificationRepository.saveAll(retries);
         }
+    }
+
+    private Notification copyForRetry(Notification source, String notifType) {
+        Notification copy = new Notification();
+        copy.setSchool(source.getSchool());
+        copy.setRecipient(source.getRecipient());
+        copy.setNotifType(notifType);
+        copy.setTitle(source.getTitle());
+        copy.setMessage(source.getMessage());
+        copy.setData(source.getData());
+        copy.setRead(source.isRead());
+        copy.setReadAt(source.getReadAt());
+        copy.setPriority(source.getPriority());
+        copy.setExpiresAt(source.getExpiresAt());
+        return copy;
     }
 
     private boolean isNotifTypeConstraintViolation(Throwable ex) {
