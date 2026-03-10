@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.common.dtos.notification.CreateNotificationRequest;
-import zw.co.zivai.core_backend.common.models.lms.chat.Notification;
+import zw.co.zivai.core_backend.common.dtos.notification.NotificationResponse;
 import zw.co.zivai.core_backend.common.services.notification.NotificationService;
 
 @RestController
@@ -29,18 +29,18 @@ public class NotificationController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Notification create(@RequestBody CreateNotificationRequest request) {
-        return notificationService.create(request);
+    public NotificationResponse create(@RequestBody CreateNotificationRequest request) {
+        return notificationService.toResponse(notificationService.create(request));
     }
 
     @GetMapping
-    public List<Notification> list(@RequestParam(required = false) UUID recipientId,
-                                   @RequestParam(required = false) Boolean read,
-                                   @RequestParam(required = false, name = "type") String type,
-                                   @RequestParam(required = false) String priority,
-                                   @RequestParam(required = false) Integer page,
-                                   @RequestParam(required = false) Integer size) {
-        return notificationService.list(recipientId, read, type, priority, page, size);
+    public List<NotificationResponse> list(@RequestParam(required = false) UUID recipientId,
+                                           @RequestParam(required = false) Boolean read,
+                                           @RequestParam(required = false, name = "type") String type,
+                                           @RequestParam(required = false) String priority,
+                                           @RequestParam(required = false) Integer page,
+                                           @RequestParam(required = false) Integer size) {
+        return notificationService.listResponses(recipientId, read, type, priority, page, size);
     }
 
     @GetMapping("/unread-count")
@@ -49,14 +49,14 @@ public class NotificationController {
     }
 
     @GetMapping("/{id}")
-    public Notification get(@PathVariable UUID id) {
-        return notificationService.get(id);
+    public NotificationResponse get(@PathVariable UUID id) {
+        return notificationService.getResponse(id);
     }
 
     @PutMapping("/{id}/read")
-    public Notification markAsRead(@PathVariable UUID id,
-                                   @RequestParam(required = false) UUID recipientId) {
-        return notificationService.markAsRead(id, recipientId);
+    public NotificationResponse markAsRead(@PathVariable UUID id,
+                                           @RequestParam(required = false) UUID recipientId) {
+        return notificationService.markAsReadResponse(id, recipientId);
     }
 
     @PutMapping("/read-all")

@@ -3,9 +3,11 @@ package zw.co.zivai.core_backend.common.services.assessments;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -23,13 +25,16 @@ import zw.co.zivai.core_backend.common.models.lms.assessments.Assessment;
 import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentAssignment;
 import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentEnrollment;
 import zw.co.zivai.core_backend.common.models.lms.classroom.ClassEntity;
+import zw.co.zivai.core_backend.common.models.lms.classroom.ClassSubject;
 import zw.co.zivai.core_backend.common.models.lms.students.Enrolment;
 import zw.co.zivai.core_backend.common.models.lms.users.User;
 import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentAssignmentRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentEnrollmentRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentRepository;
+import zw.co.zivai.core_backend.common.repositories.classroom.ClassSubjectRepository;
 import zw.co.zivai.core_backend.common.repositories.classroom.ClassRepository;
 import zw.co.zivai.core_backend.common.repositories.classroom.EnrolmentRepository;
+import zw.co.zivai.core_backend.common.repositories.classroom.StudentSubjectEnrolmentRepository;
 import zw.co.zivai.core_backend.common.repositories.user.UserRepository;
 import zw.co.zivai.core_backend.common.services.notification.NotificationService;
 
@@ -39,10 +44,12 @@ import zw.co.zivai.core_backend.common.services.notification.NotificationService
 public class AssessmentAssignmentService {
     private final AssessmentAssignmentRepository assessmentAssignmentRepository;
     private final AssessmentRepository assessmentRepository;
+    private final ClassSubjectRepository classSubjectRepository;
     private final ClassRepository classRepository;
     private final UserRepository userRepository;
     private final AssessmentEnrollmentRepository assessmentEnrollmentRepository;
     private final EnrolmentRepository enrolmentRepository;
+    private final StudentSubjectEnrolmentRepository studentSubjectEnrolmentRepository;
     private final NotificationService notificationService;
 
     public AssessmentAssignment create(CreateAssessmentAssignmentRequest request) {
@@ -79,6 +86,9 @@ public class AssessmentAssignmentService {
 
         AssessmentAssignment saved = assessmentAssignmentRepository.save(assignment);
         if (saved.isPublished()) {
+            markLinkedAssessmentPublished(saved);
+            List<AssessmentEnrollment> createdEnrollments = autoEnrollPublishedAssignment(saved, "assigned");
+            notifyAssessmentAssigned(saved, createdEnrollments);
             notifyAssessmentPublished(saved);
         }
         return saved;
@@ -138,8 +148,13 @@ public class AssessmentAssignmentService {
 
         AssessmentAssignment saved = assessmentAssignmentRepository.save(assignment);
 
-        if (!wasPublished && saved.isPublished()) {
-            notifyAssessmentPublished(saved);
+        if (saved.isPublished()) {
+            markLinkedAssessmentPublished(saved);
+            List<AssessmentEnrollment> createdEnrollments = autoEnrollPublishedAssignment(saved, "assigned");
+            if (!wasPublished) {
+                notifyAssessmentAssigned(saved, createdEnrollments);
+                notifyAssessmentPublished(saved);
+            }
         }
         if (!Objects.equals(previousDueTime, saved.getDueTime())) {
             notifyAssessmentDeadlineChanged(saved, previousDueTime, saved.getDueTime());
@@ -153,10 +168,117 @@ public class AssessmentAssignmentService {
         boolean wasPublished = assignment.isPublished();
         assignment.setPublished(published);
         AssessmentAssignment saved = assessmentAssignmentRepository.save(assignment);
-        if (!wasPublished && published) {
-            notifyAssessmentPublished(saved);
+        if (published) {
+            markLinkedAssessmentPublished(saved);
+            List<AssessmentEnrollment> createdEnrollments = autoEnrollPublishedAssignment(saved, "assigned");
+            if (!wasPublished) {
+                notifyAssessmentAssigned(saved, createdEnrollments);
+                notifyAssessmentPublished(saved);
+            }
         }
         return saved;
+    }
+
+    private List<AssessmentEnrollment> autoEnrollPublishedAssignment(AssessmentAssignment assignment, String statusCode) {
+        if (assignment == null
+            || assignment.getId() == null
+            || assignment.getAssessment() == null
+            || assignment.getAssessment().getSubject() == null
+            || assignment.getAssessment().getSubject().getId() == null) {
+            return List.of();
+        }
+
+        UUID assignmentId = assignment.getId();
+        UUID subjectId = assignment.getAssessment().getSubject().getId();
+
+        Map<UUID, AssessmentEnrollment> existingByStudentId = assessmentEnrollmentRepository
+            .findByAssessmentAssignment_IdAndDeletedAtIsNull(assignmentId)
+            .stream()
+            .filter(enrollment -> enrollment.getStudent() != null && enrollment.getStudent().getId() != null)
+            .collect(Collectors.toMap(
+                enrollment -> enrollment.getStudent().getId(),
+                Function.identity(),
+                (left, right) -> left
+            ));
+
+        Set<UUID> candidateStudentIds = new LinkedHashSet<>();
+
+        if (assignment.getClassEntity() != null && assignment.getClassEntity().getId() != null) {
+            enrolmentRepository.findByClassEntity_Id(assignment.getClassEntity().getId()).stream()
+                .filter(enrolment -> enrolment.getDeletedAt() == null)
+                .map(Enrolment::getStudent)
+                .filter(Objects::nonNull)
+                .map(User::getId)
+                .filter(Objects::nonNull)
+                .forEach(candidateStudentIds::add);
+        }
+
+        if (candidateStudentIds.isEmpty()) {
+            Set<UUID> classIds = classSubjectRepository.findBySubject_IdAndDeletedAtIsNull(subjectId).stream()
+                .map(ClassSubject::getClassEntity)
+                .filter(Objects::nonNull)
+                .map(ClassEntity::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+            if (!classIds.isEmpty()) {
+                enrolmentRepository.findByClassEntity_IdInAndDeletedAtIsNull(new ArrayList<>(classIds)).stream()
+                    .map(Enrolment::getStudent)
+                    .filter(Objects::nonNull)
+                    .map(User::getId)
+                    .filter(Objects::nonNull)
+                    .forEach(candidateStudentIds::add);
+            }
+        }
+
+        if (candidateStudentIds.isEmpty()) {
+            studentSubjectEnrolmentRepository.findDistinctStudentsBySubjectId(subjectId).stream()
+                .map(User::getId)
+                .filter(Objects::nonNull)
+                .forEach(candidateStudentIds::add);
+        }
+
+        if (candidateStudentIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<User> students = userRepository.findByIdInAndDeletedAtIsNull(new ArrayList<>(candidateStudentIds));
+        Map<UUID, User> studentById = students.stream()
+            .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        String normalizedStatusCode = (statusCode == null || statusCode.isBlank()) ? "assigned" : statusCode;
+        List<AssessmentEnrollment> newEnrollments = new ArrayList<>();
+        for (UUID studentId : candidateStudentIds) {
+            if (existingByStudentId.containsKey(studentId)) {
+                continue;
+            }
+            User student = studentById.get(studentId);
+            if (student == null) {
+                continue;
+            }
+            AssessmentEnrollment enrollment = new AssessmentEnrollment();
+            enrollment.setAssessmentAssignment(assignment);
+            enrollment.setStudent(student);
+            enrollment.setStatusCode(normalizedStatusCode);
+            newEnrollments.add(enrollment);
+        }
+
+        if (newEnrollments.isEmpty()) {
+            return List.of();
+        }
+        return assessmentEnrollmentRepository.saveAll(newEnrollments);
+    }
+
+    private void markLinkedAssessmentPublished(AssessmentAssignment assignment) {
+        if (assignment == null || assignment.getAssessment() == null || assignment.getAssessment().getId() == null) {
+            return;
+        }
+        Assessment assessment = assignment.getAssessment();
+        if ("published".equalsIgnoreCase(String.valueOf(assessment.getStatus()))) {
+            return;
+        }
+        assessment.setStatus("published");
+        assessmentRepository.save(assessment);
     }
 
     public List<AssessmentEnrollment> enrollStudents(UUID assignmentId, BulkAssessmentEnrollmentRequest request) {
