@@ -14,18 +14,19 @@ import org.springframework.data.repository.query.Param;
 import zw.co.zivai.core_backend.common.models.lms.chat.Notification;
 
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
-    @EntityGraph(attributePaths = {"recipient"})
+    @EntityGraph(attributePaths = {"recipient", "school"})
     List<Notification> findByDeletedAtIsNullOrderByCreatedAtDesc();
-    @EntityGraph(attributePaths = {"recipient"})
+    @EntityGraph(attributePaths = {"recipient", "school"})
     List<Notification> findByRecipient_IdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID recipientId);
     List<Notification> findByDeletedAtIsNullAndReadFalse();
     List<Notification> findByRecipient_IdAndDeletedAtIsNullAndReadFalse(UUID recipientId);
+    @EntityGraph(attributePaths = {"recipient", "school"})
     java.util.Optional<Notification> findByIdAndDeletedAtIsNull(UUID id);
     long countByDeletedAtIsNullAndReadFalse();
     long countByRecipient_IdAndDeletedAtIsNullAndReadFalse(UUID recipientId);
     long countByRecipient_IdAndDeletedAtIsNullAndReadFalseAndPriorityIgnoreCase(UUID recipientId, String priority);
 
-    @EntityGraph(attributePaths = {"recipient"})
+    @EntityGraph(attributePaths = {"recipient", "school"})
     @Query("""
         select n
         from Notification n

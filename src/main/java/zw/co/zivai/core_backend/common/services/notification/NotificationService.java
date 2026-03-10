@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.PageRequest;
@@ -20,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.common.dtos.notification.CreateNotificationRequest;
+import zw.co.zivai.core_backend.common.dtos.notification.NotificationResponse;
 import zw.co.zivai.core_backend.common.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.common.models.lms.chat.Notification;
 import zw.co.zivai.core_backend.common.models.lms.school.School;
@@ -32,6 +34,21 @@ import zw.co.zivai.core_backend.common.repositories.user.UserRepository;
 @RequiredArgsConstructor
 public class NotificationService {
     private static final String FALLBACK_NOTIF_TYPE = "message_received";
+    private static final Set<String> SUPPORTED_NOTIF_TYPES = Set.of(
+        "assignment_graded",
+        "assignment_submitted",
+        "plan_assigned",
+        "message_received",
+        "assessment_assigned",
+        "assessment_published",
+        "assessment_deadline_changed",
+        "assessment_submitted",
+        "development_plan_assigned",
+        "development_plan_updated",
+        "development_plan_published",
+        "development_plan_unpublished",
+        "resource_published"
+    );
 
     private final NotificationRepository notificationRepository;
     private final SchoolRepository schoolRepository;
@@ -145,6 +162,16 @@ public class NotificationService {
         ).getContent();
     }
 
+    @Transactional(readOnly = true)
+    public List<NotificationResponse> listResponses(UUID recipientId,
+                                                    Boolean read,
+                                                    String type,
+                                                    String priority,
+                                                    Integer page,
+                                                    Integer size) {
+        return toResponses(list(recipientId, read, type, priority, page, size));
+    }
+
     private String normalizeNullable(String value) {
         if (value == null) {
             return null;
@@ -157,7 +184,47 @@ public class NotificationService {
         if (notifType == null || notifType.isBlank()) {
             return FALLBACK_NOTIF_TYPE;
         }
-        return notifType.trim();
+        String normalized = notifType.trim()
+            .toLowerCase()
+            .replace('-', '_')
+            .replace(' ', '_')
+            .replaceAll("[^a-z0-9_]", "");
+        if (normalized.isBlank()) {
+            return FALLBACK_NOTIF_TYPE;
+        }
+        return SUPPORTED_NOTIF_TYPES.contains(normalized) ? normalized : FALLBACK_NOTIF_TYPE;
+    }
+
+    public NotificationResponse toResponse(Notification notification) {
+        if (notification == null) {
+            return null;
+        }
+        UUID schoolId = notification.getSchool() == null ? null : notification.getSchool().getId();
+        UUID recipientId = notification.getRecipient() == null ? null : notification.getRecipient().getId();
+        return NotificationResponse.builder()
+            .id(notification.getId())
+            .schoolId(schoolId)
+            .recipientId(recipientId)
+            .notifType(notification.getNotifType())
+            .title(notification.getTitle())
+            .message(notification.getMessage())
+            .data(notification.getData())
+            .read(notification.isRead())
+            .readAt(notification.getReadAt())
+            .priority(notification.getPriority())
+            .expiresAt(notification.getExpiresAt())
+            .createdAt(notification.getCreatedAt())
+            .updatedAt(notification.getUpdatedAt())
+            .build();
+    }
+
+    public List<NotificationResponse> toResponses(Collection<Notification> notifications) {
+        if (notifications == null || notifications.isEmpty()) {
+            return List.of();
+        }
+        return notifications.stream()
+            .map(this::toResponse)
+            .toList();
     }
 
     private Notification saveWithNotifTypeFallback(Notification notification) {
@@ -231,6 +298,11 @@ public class NotificationService {
             .orElseThrow(() -> new NotFoundException("Notification not found: " + id));
     }
 
+    @Transactional(readOnly = true)
+    public NotificationResponse getResponse(UUID id) {
+        return toResponse(get(id));
+    }
+
 
     public long getUnreadCount() {
         return getUnreadCount(null);
@@ -255,6 +327,11 @@ public class NotificationService {
             notification.setReadAt(Instant.now());
         }
         return notificationRepository.save(notification);
+    }
+
+    @Transactional
+    public NotificationResponse markAsReadResponse(UUID id, UUID recipientId) {
+        return toResponse(markAsRead(id, recipientId));
     }
 
     public void markAllAsRead() {
