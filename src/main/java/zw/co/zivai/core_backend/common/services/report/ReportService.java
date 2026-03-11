@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.common.dtos.reports.ClassReportDto;
+import zw.co.zivai.core_backend.common.dtos.reports.ClassGradeDistributionDto;
 import zw.co.zivai.core_backend.common.dtos.reports.CurriculumForecastDto;
 import zw.co.zivai.core_backend.common.dtos.reports.CurriculumTopicForecastDto;
 import zw.co.zivai.core_backend.common.dtos.reports.StudentReportCardDto;
@@ -32,6 +33,7 @@ import zw.co.zivai.core_backend.common.exceptions.NotFoundException;
 import zw.co.zivai.core_backend.common.models.lms.assessments.Assessment;
 import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentAttempt;
 import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentAssignment;
+import zw.co.zivai.core_backend.common.models.lms.assessments.AssessmentResult;
 import zw.co.zivai.core_backend.common.models.lms.classroom.ClassEntity;
 import zw.co.zivai.core_backend.common.models.lms.students.StudentSubjectEnrolment;
 import zw.co.zivai.core_backend.common.models.lms.subjects.Subject;
@@ -40,6 +42,7 @@ import zw.co.zivai.core_backend.common.models.lms.resources.Topic;
 import zw.co.zivai.core_backend.common.models.lms.users.User;
 import zw.co.zivai.core_backend.common.repositories.assessments.AttemptAnswerRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentAttemptRepository;
+import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentResultRepository;
 import zw.co.zivai.core_backend.common.repositories.classroom.ClassRepository;
 import zw.co.zivai.core_backend.common.repositories.classroom.StudentSubjectEnrolmentRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.QuestionRepository;
@@ -57,6 +60,7 @@ public class ReportService {
     private final AttemptAnswerRepository attemptAnswerRepository;
     private final TermForecastRepository termForecastRepository;
     private final AssessmentAttemptRepository assessmentAttemptRepository;
+    private final AssessmentResultRepository assessmentResultRepository;
     private final ClassRepository classRepository;
     private final UserRepository userRepository;
     private final StudentSubjectEnrolmentRepository studentSubjectEnrolmentRepository;
@@ -183,6 +187,7 @@ public class ReportService {
 
     public ClassReportDto getClassReport(UUID subjectId, UUID classId) {
         List<AssessmentAttempt> attempts = assessmentAttemptRepository.findSubmittedForReport(subjectId, classId);
+        List<AssessmentResult> results = assessmentResultRepository.findForClassReport(subjectId, classId);
 
         Map<UUID, double[]> studentTotals = new HashMap<>();
         for (AssessmentAttempt attempt : attempts) {
@@ -196,6 +201,22 @@ public class ReportService {
             totals[1] += 1;
         }
 
+        if (studentTotals.isEmpty()) {
+            for (AssessmentResult result : results) {
+                UUID resultStudentId = result.getStudent() != null ? result.getStudent().getId() : null;
+                if (resultStudentId == null) {
+                    continue;
+                }
+                Double percent = percentFromResult(result);
+                if (percent == null) {
+                    continue;
+                }
+                double[] totals = studentTotals.computeIfAbsent(resultStudentId, key -> new double[] {0, 0});
+                totals[0] += percent;
+                totals[1] += 1;
+            }
+        }
+
         List<Double> studentAverages = studentTotals.values().stream()
             .filter(totals -> totals[1] > 0)
             .map(totals -> totals[0] / totals[1])
@@ -206,13 +227,7 @@ public class ReportService {
             .average()
             .orElse(0.0);
 
-        Map<String, Long> gradeDistribution = new LinkedHashMap<>();
-        gradeDistribution.put("A", 0L);
-        gradeDistribution.put("B", 0L);
-        gradeDistribution.put("C", 0L);
-        gradeDistribution.put("D", 0L);
-        gradeDistribution.put("E", 0L);
-        gradeDistribution.put("U", 0L);
+        Map<String, Long> gradeDistribution = initializeGradeDistribution();
 
         for (double avg : studentAverages) {
             String grade = gradeFromPercent(avg);
@@ -223,6 +238,17 @@ public class ReportService {
         if (subject == null) {
             subject = attempts.stream()
                 .map(attempt -> attempt.getAssessmentEnrollment().getAssessmentAssignment().getAssessment().getSubject())
+                .filter(value -> value != null)
+                .findFirst()
+                .orElse(null);
+        }
+        if (subject == null) {
+            subject = results.stream()
+                .map(result -> result.getAssessmentAssignment())
+                .filter(value -> value != null)
+                .map(AssessmentAssignment::getAssessment)
+                .filter(value -> value != null)
+                .map(Assessment::getSubject)
                 .filter(value -> value != null)
                 .findFirst()
                 .orElse(null);
@@ -249,9 +275,27 @@ public class ReportService {
             .classAveragePercent(roundOneDecimal(classAverage))
             .predictedGrade(gradeFromPercent(classAverage))
             .studentCount(studentAverages.size())
-            .assessmentCount(attempts.size())
+            .assessmentCount(!attempts.isEmpty() ? attempts.size() : results.size())
             .gradeDistribution(gradeDistribution)
             .masteryGaps(masteryGaps)
+            .build();
+    }
+
+    public ClassGradeDistributionDto getClassGradeDistribution(UUID subjectId, UUID classId) {
+        ClassReportDto classReport = getClassReport(subjectId, classId);
+        long distributionTotal = classReport.getGradeDistribution() == null
+            ? 0L
+            : classReport.getGradeDistribution().values().stream().mapToLong(value -> value == null ? 0L : value).sum();
+        boolean hasGradedSubmissions = distributionTotal > 0 || classReport.getAssessmentCount() > 0;
+        return ClassGradeDistributionDto.builder()
+            .subjectId(classReport.getSubjectId())
+            .subjectName(classReport.getSubjectName())
+            .classId(classReport.getClassId())
+            .className(classReport.getClassName())
+            .studentCount(classReport.getStudentCount())
+            .assessmentCount(classReport.getAssessmentCount())
+            .gradeDistribution(classReport.getGradeDistribution())
+            .hasGradedSubmissions(hasGradedSubmissions)
             .build();
     }
 
@@ -591,6 +635,50 @@ public class ReportService {
         if (percent >= 50) return "D";
         if (percent >= 40) return "E";
         return "U";
+    }
+
+    private Map<String, Long> initializeGradeDistribution() {
+        Map<String, Long> gradeDistribution = new LinkedHashMap<>();
+        gradeDistribution.put("A", 0L);
+        gradeDistribution.put("B", 0L);
+        gradeDistribution.put("C", 0L);
+        gradeDistribution.put("D", 0L);
+        gradeDistribution.put("E", 0L);
+        gradeDistribution.put("U", 0L);
+        return gradeDistribution;
+    }
+
+    private Double percentFromResult(AssessmentResult result) {
+        if (result == null) {
+            return null;
+        }
+        Double expected = result.getExpectedMark();
+        Double actual = result.getActualMark();
+        if (expected != null && expected > 0 && actual != null) {
+            return (actual / expected) * 100.0;
+        }
+        if (result.getFinalizedAttempt() != null) {
+            Double fromAttempt = percentFromAttempt(result.getFinalizedAttempt());
+            if (fromAttempt != null) {
+                return fromAttempt;
+            }
+        }
+        return percentFromGrade(result.getGrade());
+    }
+
+    private Double percentFromGrade(String grade) {
+        if (grade == null || grade.isBlank()) {
+            return null;
+        }
+        return switch (grade.trim().toUpperCase()) {
+            case "A" -> 85.0;
+            case "B" -> 75.0;
+            case "C" -> 65.0;
+            case "D" -> 55.0;
+            case "E" -> 45.0;
+            case "U", "F" -> 30.0;
+            default -> null;
+        };
     }
 
     private Double resolveMaxScore(AssessmentAttempt attempt) {

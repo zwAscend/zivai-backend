@@ -15,6 +15,7 @@ public class DevelopmentPlanDto {
     Instant startDate;
     Double currentProgress;
     String status;
+    boolean current;
     Instant completionDate;
     List<StudentSkillProgressDto> skillProgress;
     Instant createdAt;

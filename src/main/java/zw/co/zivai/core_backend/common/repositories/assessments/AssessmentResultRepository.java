@@ -34,4 +34,28 @@ public interface AssessmentResultRepository extends JpaRepository<AssessmentResu
     """)
     List<AssessmentResult> findForStudentHistory(@Param("studentId") UUID studentId,
                                                  @Param("assignmentIds") Collection<UUID> assignmentIds);
+
+    @EntityGraph(attributePaths = {
+        "student",
+        "assessmentAssignment",
+        "assessmentAssignment.assessment",
+        "assessmentAssignment.assessment.subject",
+        "assessmentAssignment.classEntity",
+        "finalizedAttempt"
+    })
+    @Query("""
+        select ar
+        from AssessmentResult ar
+        join ar.assessmentAssignment aa
+        join aa.assessment a
+        left join a.subject s
+        left join aa.classEntity ce
+        where ar.deletedAt is null
+          and aa.deletedAt is null
+          and a.deletedAt is null
+          and (:subjectId is null or s.id = :subjectId)
+          and (:classId is null or ce.id = :classId)
+    """)
+    List<AssessmentResult> findForClassReport(@Param("subjectId") UUID subjectId,
+                                              @Param("classId") UUID classId);
 }
