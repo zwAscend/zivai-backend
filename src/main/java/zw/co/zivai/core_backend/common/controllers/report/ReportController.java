@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.common.dtos.reports.ClassReportDto;
+import zw.co.zivai.core_backend.common.dtos.reports.ClassGradeDistributionDto;
 import zw.co.zivai.core_backend.common.dtos.reports.CurriculumForecastDto;
 import zw.co.zivai.core_backend.common.dtos.reports.StudentReportCardDto;
 import zw.co.zivai.core_backend.common.dtos.reports.StudentReportDto;
@@ -41,6 +42,12 @@ public class ReportController {
     public ClassReportDto classReport(@RequestParam(required = false) UUID subjectId,
                                       @RequestParam(required = false) UUID classId) {
         return reportService.getClassReport(subjectId, classId);
+    }
+
+    @GetMapping("/grade-distribution")
+    public ClassGradeDistributionDto gradeDistribution(@RequestParam(required = false) UUID subjectId,
+                                                       @RequestParam(required = false) UUID classId) {
+        return reportService.getClassGradeDistribution(subjectId, classId);
     }
 
     @GetMapping("/student-report")
