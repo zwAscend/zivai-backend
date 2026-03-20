@@ -14,6 +14,8 @@ public class DevelopmentPlanDto {
     PlanDto plan;
     Instant startDate;
     Double currentProgress;
+    String activeStepId;
+    List<String> completedStepIds;
     String status;
     boolean current;
     Instant completionDate;

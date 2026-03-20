@@ -1,7 +1,9 @@
 package zw.co.zivai.core_backend.common.models.lms.students;
 
 import java.time.Instant;
+import java.util.UUID;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.JoinColumn;
@@ -9,6 +11,8 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import zw.co.zivai.core_backend.common.models.base.BaseEntity;
 import zw.co.zivai.core_backend.common.models.lms.subjects.Subject;
 import zw.co.zivai.core_backend.common.models.lms.development.Plan;
@@ -36,6 +40,13 @@ public class StudentPlan extends BaseEntity {
 
     @Column(name = "current_progress", nullable = false)
     private Double currentProgress = 0.0;
+
+    @Column(name = "active_step_id")
+    private UUID activeStepId;
+
+    @Column(name = "completed_step_ids", nullable = false)
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode completedStepIds;
 
     @Column(nullable = false)
     private String status = "on_hold";

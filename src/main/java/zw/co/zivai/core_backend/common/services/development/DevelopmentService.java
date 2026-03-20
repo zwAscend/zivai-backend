@@ -727,7 +727,6 @@ public class DevelopmentService {
         }
 
         persistStepOrderingSafely(reordered);
-        notifyPlanUpdated(studentPlan, "Plan steps were reordered.");
         return toDevelopmentPlanDtos(List.of(studentPlanRepository.save(studentPlan))).get(0);
     }
 
@@ -1291,12 +1290,33 @@ public class DevelopmentService {
             .plan(planDto)
             .startDate(plan.getStartDate())
             .currentProgress(plan.getCurrentProgress())
+            .activeStepId(plan.getActiveStepId() == null ? null : plan.getActiveStepId().toString())
+            .completedStepIds(readCompletedStepIds(plan))
             .status(toUiStatus(plan.getStatus()))
+            .current(plan.isCurrent())
             .completionDate(plan.getCompletionDate())
             .skillProgress(progress)
             .createdAt(plan.getCreatedAt())
             .updatedAt(plan.getUpdatedAt())
             .build();
+    }
+
+    private List<String> readCompletedStepIds(StudentPlan plan) {
+        if (plan == null || plan.getCompletedStepIds() == null || !plan.getCompletedStepIds().isArray()) {
+            return List.of();
+        }
+
+        List<String> values = new ArrayList<>();
+        plan.getCompletedStepIds().forEach(node -> {
+            if (node == null || node.isNull()) {
+                return;
+            }
+            String value = node.asText("").trim();
+            if (!value.isBlank()) {
+                values.add(value);
+            }
+        });
+        return values;
     }
 
     private String normalizeStatus(String value) {

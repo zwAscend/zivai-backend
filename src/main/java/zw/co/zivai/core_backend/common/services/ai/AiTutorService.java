@@ -1,5 +1,11 @@
 package zw.co.zivai.core_backend.common.services.ai;
 
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -7,7 +13,13 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import lombok.RequiredArgsConstructor;
+import zw.co.zivai.core_backend.common.configs.AiServiceProperties;
 import zw.co.zivai.core_backend.common.dtos.ai.AiTutorMessageDto;
 import zw.co.zivai.core_backend.common.dtos.ai.AiTutorSessionDto;
 import zw.co.zivai.core_backend.common.dtos.ai.CreateAiTutorMessageRequest;
@@ -30,6 +42,8 @@ public class AiTutorService {
     private final AiTutorMessageRepository messageRepository;
     private final UserRepository userRepository;
     private final SubjectRepository subjectRepository;
+    private final AiServiceProperties aiServiceProperties;
+    private final ObjectMapper objectMapper;
 
     public AiTutorSessionDto getOrCreateSession(CreateAiTutorSessionRequest request) {
         if (request == null || request.getStudentId() == null || request.getStudentId().isBlank()) {
@@ -118,22 +132,148 @@ public class AiTutorService {
 
         if (Boolean.TRUE.equals(request.getAutoReply())
             && "student".equalsIgnoreCase(saved.getSenderRole())) {
-            messageRepository.save(buildPlaceholderReply(session));
+            messageRepository.save(buildTutorReply(session, request));
         }
 
         return toMessageDto(saved);
     }
 
-    private AiTutorMessage buildPlaceholderReply(AiTutorSession session) {
+    private AiTutorMessage buildTutorReply(AiTutorSession session, CreateAiTutorMessageRequest request) {
+        String replyText;
+        try {
+            replyText = requestTutorReply(session, request);
+        } catch (Exception ex) {
+            replyText = buildFallbackReplyText(session, request);
+        }
+
         AiTutorMessage reply = new AiTutorMessage();
         reply.setSession(session);
         reply.setSenderRole("tutor");
         reply.setContentType("text");
-        reply.setContent("Your request has been saved. The AI tutor response will appear once it is enabled.");
+        reply.setContent(replyText);
         reply.setTs(Instant.now());
         session.setLastMessageAt(reply.getTs());
         sessionRepository.save(session);
         return reply;
+    }
+
+    private String requestTutorReply(AiTutorSession session, CreateAiTutorMessageRequest request)
+        throws IOException, InterruptedException {
+        String baseUrl = normalizeBaseUrl(aiServiceProperties.getBaseUrl());
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("studentId", session.getStudent() != null && session.getStudent().getId() != null
+            ? session.getStudent().getId().toString()
+            : null);
+        payload.put("subjectId", session.getSubject() != null && session.getSubject().getId() != null
+            ? session.getSubject().getId().toString()
+            : null);
+        payload.put("subjectName", session.getSubject() != null ? session.getSubject().getName() : null);
+        payload.put("coachMode", extractPayloadText(request.getContentPayload(), "coachingMode", "socratic"));
+        payload.put("latestMessage", resolveMessageText(request));
+        payload.put("taskGoal", extractPayloadText(request.getContentPayload(), "taskGoal", null));
+        payload.put("reasoningCanvas", extractPayloadText(request.getContentPayload(), "reasoningCanvas", null));
+        payload.put("planTitle", extractPayloadText(request.getContentPayload(), "planTitle", null));
+        payload.put("planStepTitle", extractPayloadText(request.getContentPayload(), "selectedPlanStep", null));
+
+        ArrayNode messagesNode = payload.putArray("messages");
+        List<AiTutorMessage> history = messageRepository.findBySession_IdAndDeletedAtIsNullOrderByTsAsc(session.getId());
+        int startIndex = Math.max(0, history.size() - 8);
+        for (AiTutorMessage historyMessage : history.subList(startIndex, history.size())) {
+            String text = resolveMessageText(historyMessage);
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            ObjectNode messageNode = messagesNode.addObject();
+            messageNode.put("role", "student".equalsIgnoreCase(historyMessage.getSenderRole()) ? "student" : "assistant");
+            messageNode.put("text", text);
+        }
+
+        HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofMillis(Math.max(1000, aiServiceProperties.getConnectTimeoutMs())))
+            .build();
+        HttpRequest httpRequest = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "/api/v1/agents/student/tutor"))
+            .timeout(Duration.ofMillis(Math.max(3000, aiServiceProperties.getReadTimeoutMs())))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
+            .build();
+
+        HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IOException("AI tutor request failed with status " + response.statusCode() + ": " + response.body());
+        }
+
+        JsonNode responseBody = objectMapper.readTree(response.body());
+        String reply = extractPayloadText(responseBody, "reply", null);
+        if (reply == null || reply.isBlank()) {
+            throw new IOException("AI tutor response did not include a reply");
+        }
+
+        String nextAction = extractPayloadText(responseBody, "suggestedNextAction", null);
+        String followUpQuestion = extractPayloadText(responseBody, "followUpQuestion", null);
+        StringBuilder combined = new StringBuilder(reply.trim());
+        if (nextAction != null && !nextAction.isBlank()) {
+            combined.append("\n\nNext step: ").append(nextAction.trim());
+        }
+        if (followUpQuestion != null && !followUpQuestion.isBlank()) {
+            combined.append("\n\nThink about this: ").append(followUpQuestion.trim());
+        }
+        return combined.toString();
+    }
+
+    private String buildFallbackReplyText(AiTutorSession session, CreateAiTutorMessageRequest request) {
+        String subjectName = session.getSubject() != null && session.getSubject().getName() != null
+            ? session.getSubject().getName()
+            : "this subject";
+        String stepTitle = extractPayloadText(request.getContentPayload(), "selectedPlanStep", null);
+        String focus = (stepTitle != null && !stepTitle.isBlank()) ? stepTitle : subjectName;
+        return "Focus on " + focus + " first. Explain the main idea in your own words, test it on one example, "
+            + "then tell me which step still feels uncertain.";
+    }
+
+    private String resolveMessageText(CreateAiTutorMessageRequest request) {
+        String content = request.getContent();
+        if (content != null && !content.isBlank()) {
+            return content.trim();
+        }
+        String transcript = request.getTranscript();
+        if (transcript != null && !transcript.isBlank()) {
+            return transcript.trim();
+        }
+        return "";
+    }
+
+    private String resolveMessageText(AiTutorMessage message) {
+        if (message.getContent() != null && !message.getContent().isBlank()) {
+            return message.getContent().trim();
+        }
+        if (message.getTranscript() != null && !message.getTranscript().isBlank()) {
+            return message.getTranscript().trim();
+        }
+        return "";
+    }
+
+    private String normalizeBaseUrl(String baseUrl) {
+        String resolved = baseUrl == null ? "" : baseUrl.trim();
+        if (resolved.isEmpty()) {
+            return "http://localhost:8000";
+        }
+        return resolved.endsWith("/") ? resolved.substring(0, resolved.length() - 1) : resolved;
+    }
+
+    private String extractPayloadText(JsonNode node, String fieldName, String fallback) {
+        if (node == null || fieldName == null || fieldName.isBlank()) {
+            return fallback;
+        }
+        JsonNode fieldNode = node.get(fieldName);
+        if (fieldNode == null || fieldNode.isNull()) {
+            return fallback;
+        }
+        String value = fieldNode.asText(null);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim();
     }
 
     private User resolveSender(String senderId) {

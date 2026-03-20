@@ -165,19 +165,32 @@ public class SubmissionService {
             answer.setAssessmentQuestion(assessmentQuestion);
             answer.setStudentAnswerText(answerItem.getStudentAnswerText());
             answer.setStudentAnswerBlob(answerItem.getStudentAnswerBlob());
+            answer.setExternalAssessmentData(answerItem.getExternalAssessmentData());
+            answer.setOcrText(answerItem.getOcrText());
             Double questionMax = assessmentQuestion.getPoints() != null
                 ? assessmentQuestion.getPoints()
                 : assessmentQuestion.getQuestion().getMaxMark();
             answer.setMaxScore(questionMax != null ? questionMax : 1.0);
 
-            Double autoScore = evaluateObjectiveScore(assessmentQuestion.getQuestion(), answer);
-            if (autoScore != null) {
-                answer.setAiScore(autoScore);
-                answer.setAiConfidence(1.0);
+            ExternalAssessmentMetrics metrics = parseExternalAssessmentData(
+                answerItem.getExternalAssessmentData() != null ? answerItem.getExternalAssessmentData().toString() : null
+            );
+            if (metrics != null) {
+                answer.setAiScore(metrics.marksAchieved);
+                answer.setAiConfidence(metrics.confidence);
+                answer.setFeedbackText(metrics.overallFeedback);
                 answer.setGradedAt(Instant.now());
                 answer.setRequiresReview(false);
             } else {
-                answer.setRequiresReview(true);
+                Double autoScore = evaluateObjectiveScore(assessmentQuestion.getQuestion(), answer);
+                if (autoScore != null) {
+                    answer.setAiScore(autoScore);
+                    answer.setAiConfidence(1.0);
+                    answer.setGradedAt(Instant.now());
+                    answer.setRequiresReview(false);
+                } else {
+                    answer.setRequiresReview(true);
+                }
             }
 
             attemptAnswerRepository.save(answer);
@@ -223,6 +236,10 @@ public class SubmissionService {
             result.setStatus("published");
         } else {
             result.setStatus("draft");
+        }
+        String attemptFeedback = buildAttemptFeedback(attemptAnswers);
+        if (attemptFeedback != null) {
+            result.setFeedback(attemptFeedback);
         }
         assessmentResultRepository.save(result);
         notifyTeacherOfSubmission(assignment, student, savedAttempt);
@@ -315,7 +332,9 @@ public class SubmissionService {
         answer.setStudentAnswerText(textContent);
         answer.setTextContent(textContent);
         answer.setSubmissionType(submissionType);
-        answer.setExternalAssessmentData(parseJsonNode(externalAssessmentData));
+        JsonNode parsedExternalAssessment = parseJsonNode(externalAssessmentData);
+        answer.setExternalAssessmentData(parsedExternalAssessment);
+        answer.setOcrText(textField(parsedExternalAssessment, "markdown"));
         answer.setMaxScore(attempt.getMaxScore() != null ? attempt.getMaxScore() : assessment.getMaxScore());
 
         if (metrics != null) {
@@ -934,6 +953,9 @@ public class SubmissionService {
         if (answer.getTextContent() != null && !answer.getTextContent().isBlank()) {
             return answer.getTextContent();
         }
+        if (answer.getOcrText() != null && !answer.getOcrText().isBlank()) {
+            return answer.getOcrText();
+        }
         if (answer.getStudentAnswerText() != null && !answer.getStudentAnswerText().isBlank()) {
             return answer.getStudentAnswerText();
         }
@@ -967,7 +989,11 @@ public class SubmissionService {
     }
 
     private String resolvePerQuestionFeedback(AttemptAnswer answer) {
-        String feedback = firstNonBlank(answer.getFeedbackText(), textField(answer.getExternalAssessmentData(), "feedback"));
+        String feedback = firstNonBlank(
+            answer.getFeedbackText(),
+            nestedTextField(answer.getExternalAssessmentData(), "assessment", "overall_feedback"),
+            textField(answer.getExternalAssessmentData(), "feedback")
+        );
         return feedback;
     }
 
@@ -981,6 +1007,25 @@ public class SubmissionService {
         }
         String value = child.asText();
         return value == null || value.isBlank() ? null : value;
+    }
+
+    private String nestedTextField(JsonNode node, String parentKey, String childKey) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        return textField(node.path(parentKey), childKey);
+    }
+
+    private String buildAttemptFeedback(List<AttemptAnswer> answers) {
+        if (answers == null || answers.isEmpty()) {
+            return null;
+        }
+        String joined = answers.stream()
+            .map(this::resolvePerQuestionFeedback)
+            .filter(value -> value != null && !value.isBlank())
+            .distinct()
+            .collect(Collectors.joining("\n"));
+        return joined.isBlank() ? null : joined;
     }
 
     private Double numberField(JsonNode node, String key) {
