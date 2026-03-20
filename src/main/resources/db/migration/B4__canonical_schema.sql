@@ -1990,6 +1990,8 @@ CREATE TABLE IF NOT EXISTS lms.student_plans (
 
   start_date timestamptz NOT NULL DEFAULT NOW(),
   current_progress numeric(5,2) NOT NULL DEFAULT 0 CHECK (current_progress BETWEEN 0 AND 100),
+  active_step_id uuid REFERENCES lms.plan_steps(id) ON DELETE SET NULL,
+  completed_step_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
 
   status varchar(16) NOT NULL DEFAULT 'on_hold' CHECK (status IN ('active','completed','on_hold','cancelled')),
   is_current boolean NOT NULL DEFAULT FALSE,

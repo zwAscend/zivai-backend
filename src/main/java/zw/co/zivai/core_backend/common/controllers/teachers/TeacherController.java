@@ -15,6 +15,7 @@ import zw.co.zivai.core_backend.common.dtos.teachers.TeacherAssessmentOverviewDt
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherBasicDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherClassDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherDashboardDto;
+import zw.co.zivai.core_backend.common.dtos.teachers.TeacherPerformanceOverviewDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherStudentProfileSummaryDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherStudentSummaryDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherSubjectDto;
@@ -65,6 +66,15 @@ public class TeacherController {
     public TeacherDashboardDto getDashboard(@PathVariable UUID teacherId,
                                             @RequestParam(required = false) UUID subjectId) {
         return teacherService.getDashboard(teacherId, subjectId);
+    }
+
+    @GetMapping("/{teacherId}/performance/overview")
+    public TeacherPerformanceOverviewDto getPerformanceOverview(@PathVariable UUID teacherId,
+                                                               @RequestParam(required = false) UUID subjectId,
+                                                               @RequestParam(required = false) UUID topicId,
+                                                               @RequestParam(required = false) UUID assessmentId,
+                                                               @RequestParam(required = false) UUID classId) {
+        return teacherService.getPerformanceOverview(teacherId, subjectId, topicId, assessmentId, classId);
     }
 
     @GetMapping("/me")

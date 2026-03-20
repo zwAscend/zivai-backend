@@ -218,6 +218,8 @@ public class SyncPayloadMapper {
         putRef(node, "subjectId", studentPlan.getSubject() == null ? null : studentPlan.getSubject().getId());
         putInstant(node, "startDate", studentPlan.getStartDate());
         putNumber(node, "currentProgress", studentPlan.getCurrentProgress());
+        putRef(node, "activeStepId", studentPlan.getActiveStepId());
+        putJson(node, "completedStepIds", studentPlan.getCompletedStepIds());
         putNullable(node, "status", studentPlan.getStatus());
         node.put("current", studentPlan.isCurrent());
         putInstant(node, "completionDate", studentPlan.getCompletionDate());
@@ -439,6 +441,8 @@ public class SyncPayloadMapper {
         studentPlan.setSubject(reference(Subject.class, uuid(payload, "subjectId")));
         studentPlan.setStartDate(instant(payload, "startDate"));
         studentPlan.setCurrentProgress(doubleValue(payload, "currentProgress"));
+        studentPlan.setActiveStepId(uuid(payload, "activeStepId"));
+        studentPlan.setCompletedStepIds(json(payload, "completedStepIds"));
         studentPlan.setStatus(text(payload, "status"));
         studentPlan.setCurrent(bool(payload, "current", false));
         studentPlan.setCompletionDate(instant(payload, "completionDate"));

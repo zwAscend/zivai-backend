@@ -20,5 +20,7 @@ public class SubmitAssessmentAnswersRequest {
         private UUID assessmentQuestionId;
         private String studentAnswerText;
         private JsonNode studentAnswerBlob;
+        private JsonNode externalAssessmentData;
+        private String ocrText;
     }
 }

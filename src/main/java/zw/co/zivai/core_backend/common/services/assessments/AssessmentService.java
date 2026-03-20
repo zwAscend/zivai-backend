@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
 import zw.co.zivai.core_backend.common.dtos.assessments.AssessmentQuestionDto;
@@ -57,6 +58,7 @@ public class AssessmentService {
     private final QuestionRepository questionRepository;
     private final AssessmentQuestionRepository assessmentQuestionRepository;
 
+    @Transactional
     public Assessment create(CreateAssessmentRequest request) {
         if (request.getSubjectId() == null) {
             throw new BadRequestException("Subject is required");
@@ -113,6 +115,7 @@ public class AssessmentService {
         return saved;
     }
 
+    @Transactional
     public Assessment update(UUID id, UpdateAssessmentRequest request) {
         Assessment assessment = get(id);
 
@@ -177,12 +180,14 @@ public class AssessmentService {
         return saved;
     }
 
+    @Transactional
     public Assessment setStatus(UUID id, String status) {
         Assessment assessment = get(id);
         assessment.setStatus(status);
         return assessmentRepository.save(assessment);
     }
 
+    @Transactional
     public AssessmentWithQuestionsDto addQuestions(UUID assessmentId, List<CreateAssessmentQuestionRequest> questions) {
         Assessment assessment = get(assessmentId);
         if (questions == null || questions.isEmpty()) {
@@ -204,6 +209,7 @@ public class AssessmentService {
         return getWithQuestions(assessmentId);
     }
 
+    @Transactional
     public AssessmentWithQuestionsDto replaceQuestions(UUID assessmentId, List<CreateAssessmentQuestionRequest> questions) {
         Assessment assessment = get(assessmentId);
         assessmentQuestionRepository.deleteByAssessment_Id(assessmentId);
@@ -217,6 +223,7 @@ public class AssessmentService {
         return getWithQuestions(assessmentId);
     }
 
+    @Transactional
     public void delete(UUID id) {
         assessmentRepository.findById(id).ifPresent(assessment -> {
             if (assessment.getDeletedAt() != null) {

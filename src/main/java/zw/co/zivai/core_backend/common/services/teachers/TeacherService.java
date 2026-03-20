@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -27,10 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import zw.co.zivai.core_backend.common.dtos.common.PageResponse;
+import zw.co.zivai.core_backend.common.dtos.assessments.TopicAnswerStat;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherAssessmentOverviewDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherBasicDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherClassDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherDashboardDto;
+import zw.co.zivai.core_backend.common.dtos.teachers.TeacherPerformanceOverviewDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherStudentProfileSummaryDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherStudentSummaryDto;
 import zw.co.zivai.core_backend.common.dtos.teachers.TeacherSubjectDto;
@@ -47,9 +50,11 @@ import zw.co.zivai.core_backend.common.models.lms.students.Enrolment;
 import zw.co.zivai.core_backend.common.models.lms.students.StudentPlan;
 import zw.co.zivai.core_backend.common.models.lms.students.StudentProfile;
 import zw.co.zivai.core_backend.common.models.lms.students.StudentSubjectEnrolment;
+import zw.co.zivai.core_backend.common.models.lms.resources.Topic;
 import zw.co.zivai.core_backend.common.models.lms.subjects.Subject;
 import zw.co.zivai.core_backend.common.models.lms.users.User;
 import zw.co.zivai.core_backend.common.models.lookups.Role;
+import zw.co.zivai.core_backend.common.repositories.assessments.AttemptAnswerRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentAssignmentRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentAttemptRepository;
 import zw.co.zivai.core_backend.common.repositories.assessments.AssessmentEnrollmentRepository;
@@ -60,6 +65,7 @@ import zw.co.zivai.core_backend.common.repositories.classroom.StudentSubjectEnro
 import zw.co.zivai.core_backend.common.repositories.development.StudentPlanRepository;
 import zw.co.zivai.core_backend.common.repositories.notification.NotificationRepository;
 import zw.co.zivai.core_backend.common.repositories.students.StudentProfileRepository;
+import zw.co.zivai.core_backend.common.repositories.subject.TopicRepository;
 import zw.co.zivai.core_backend.common.repositories.user.UserRepository;
 
 @Service
@@ -77,6 +83,8 @@ public class TeacherService {
     private final StudentSubjectEnrolmentRepository studentSubjectEnrolmentRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final StudentPlanRepository studentPlanRepository;
+    private final TopicRepository topicRepository;
+    private final AttemptAnswerRepository attemptAnswerRepository;
     private final AssessmentAssignmentRepository assessmentAssignmentRepository;
     private final AssessmentEnrollmentRepository assessmentEnrollmentRepository;
     private final AssessmentResultRepository assessmentResultRepository;
@@ -687,6 +695,229 @@ public class TeacherService {
             .build();
     }
 
+    public TeacherPerformanceOverviewDto getPerformanceOverview(UUID teacherId,
+                                                                UUID subjectId,
+                                                                UUID topicId,
+                                                                UUID assessmentId,
+                                                                UUID classId) {
+        requireTeacher(teacherId);
+        TeacherScope scope = resolveScope(teacherId, subjectId, classId);
+        if (scope.classIds().isEmpty()) {
+            return emptyPerformanceOverview(teacherId, subjectId, null, topicId, null, assessmentId, null, "subject");
+        }
+
+        List<Enrolment> classEnrolments = enrolmentRepository.findByClassEntity_IdInAndDeletedAtIsNull(new ArrayList<>(scope.classIds()));
+        Map<UUID, String> primaryClassNameByStudent = new HashMap<>();
+        Set<UUID> scopedStudentIds = new LinkedHashSet<>();
+        for (Enrolment enrolment : classEnrolments) {
+            if (enrolment.getStudent() == null || enrolment.getStudent().getDeletedAt() != null) {
+                continue;
+            }
+            UUID studentId = enrolment.getStudent().getId();
+            scopedStudentIds.add(studentId);
+            primaryClassNameByStudent.putIfAbsent(
+                studentId,
+                enrolment.getClassEntity() != null ? enrolment.getClassEntity().getName() : null
+            );
+        }
+
+        if (scopedStudentIds.isEmpty()) {
+            return emptyPerformanceOverview(teacherId, subjectId, null, topicId, null, assessmentId, null, "subject");
+        }
+
+        List<User> students = userRepository.findByIdInAndDeletedAtIsNull(new ArrayList<>(scopedStudentIds)).stream()
+            .filter(this::isStudent)
+            .sorted(Comparator
+                .comparing(User::getLastName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
+                .thenComparing(User::getFirstName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
+            .toList();
+        if (students.isEmpty()) {
+            return emptyPerformanceOverview(teacherId, subjectId, null, topicId, null, assessmentId, null, "subject");
+        }
+
+        List<UUID> studentIds = students.stream().map(User::getId).toList();
+        Set<UUID> studentIdSet = new LinkedHashSet<>(studentIds);
+
+        Map<UUID, StudentProfile> profileByStudent = studentProfileRepository.findByUserIdInAndDeletedAtIsNull(studentIds).stream()
+            .collect(Collectors.toMap(StudentProfile::getUserId, profile -> profile));
+        List<StudentPlan> plans = subjectId != null
+            ? studentPlanRepository.findByStudent_IdInAndSubject_IdAndDeletedAtIsNull(studentIds, subjectId)
+            : studentPlanRepository.findByStudent_IdInAndDeletedAtIsNull(studentIds);
+        Map<UUID, List<StudentPlan>> plansByStudent = plans.stream()
+            .filter(plan -> plan.getStudent() != null)
+            .collect(Collectors.groupingBy(plan -> plan.getStudent().getId()));
+
+        Subject resolvedSubject = null;
+        if (subjectId != null) {
+            resolvedSubject = scope.classSubjects().stream()
+                .map(ClassSubject::getSubject)
+                .filter(Objects::nonNull)
+                .filter(subject -> subjectId.equals(subject.getId()))
+                .findFirst()
+                .orElse(null);
+        } else {
+            resolvedSubject = scope.classSubjects().stream()
+                .map(ClassSubject::getSubject)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        }
+
+        Map<UUID, Topic> topicsById = resolvedSubject != null
+            ? topicRepository.findBySubject_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(resolvedSubject.getId()).stream()
+                .collect(Collectors.toMap(Topic::getId, topic -> topic, (left, right) -> left, LinkedHashMap::new))
+            : Map.of();
+        Topic selectedTopic = topicId != null ? topicsById.get(topicId) : null;
+
+        AssessmentAssignment selectedAssignment = assessmentId != null
+            ? assessmentAssignmentRepository.findByIdAndDeletedAtIsNull(assessmentId).orElse(null)
+            : null;
+        if (selectedAssignment != null && selectedAssignment.getClassEntity() != null && !scope.classIds().contains(selectedAssignment.getClassEntity().getId())) {
+            throw new NotFoundException("Assessment is not linked to this teacher: " + assessmentId);
+        }
+
+        String currentView = assessmentId != null ? "assessment" : (topicId != null ? "topic" : "subject");
+        List<TopicAnswerStat> rawTopicStats;
+        if (assessmentId != null && selectedAssignment != null) {
+            rawTopicStats = attemptAnswerRepository.findTopicStatsByAssessmentAssignment(assessmentId);
+        } else if (resolvedSubject != null) {
+            rawTopicStats = attemptAnswerRepository.findTopicStatsBySubject(resolvedSubject.getId());
+        } else {
+            rawTopicStats = List.of();
+        }
+
+        List<TopicAnswerStat> scopedTopicStats = rawTopicStats.stream()
+            .filter(stat -> stat.getStudentId() != null && studentIdSet.contains(stat.getStudentId()))
+            .filter(stat -> topicId == null || topicId.equals(stat.getTopicId()))
+            .toList();
+
+        Map<UUID, double[]> studentTotals = new HashMap<>();
+        Map<UUID, Map<UUID, double[]>> studentTopicTotals = new HashMap<>();
+        Map<UUID, double[]> topicTotals = new HashMap<>();
+        Map<UUID, Set<UUID>> learnersByTopic = new HashMap<>();
+
+        for (TopicAnswerStat stat : scopedTopicStats) {
+            if (stat.getStudentId() == null) {
+                continue;
+            }
+            double score = stat.getScore() != null ? stat.getScore() : 0.0;
+            double maxScore = stat.getMaxScore() != null ? stat.getMaxScore() : 0.0;
+            if (maxScore <= 0) {
+                continue;
+            }
+            double[] studentTotal = studentTotals.computeIfAbsent(stat.getStudentId(), key -> new double[] {0.0, 0.0});
+            studentTotal[0] += score;
+            studentTotal[1] += maxScore;
+
+            if (stat.getTopicId() != null) {
+                double[] topicTotal = topicTotals.computeIfAbsent(stat.getTopicId(), key -> new double[] {0.0, 0.0});
+                topicTotal[0] += score;
+                topicTotal[1] += maxScore;
+                learnersByTopic.computeIfAbsent(stat.getTopicId(), key -> new LinkedHashSet<>()).add(stat.getStudentId());
+
+                Map<UUID, double[]> perStudentTopic = studentTopicTotals.computeIfAbsent(stat.getStudentId(), key -> new HashMap<>());
+                double[] perTopic = perStudentTopic.computeIfAbsent(stat.getTopicId(), key -> new double[] {0.0, 0.0});
+                perTopic[0] += score;
+                perTopic[1] += maxScore;
+            }
+        }
+
+        Map<UUID, AssessmentResult> resultByStudent = new HashMap<>();
+        if (selectedAssignment != null) {
+            List<AssessmentResult> results = assessmentResultRepository.findByAssessmentAssignment_IdAndDeletedAtIsNull(selectedAssignment.getId()).stream()
+                .filter(result -> result.getStudent() != null && studentIdSet.contains(result.getStudent().getId()))
+                .toList();
+            for (AssessmentResult result : results) {
+                UUID studentIdValue = result.getStudent().getId();
+                AssessmentResult previous = resultByStudent.get(studentIdValue);
+                if (previous == null || isMoreRecentResult(result, previous)) {
+                    resultByStudent.put(studentIdValue, result);
+                }
+            }
+        }
+
+        String strongestArea = resolveAreaLabel(topicTotals, topicsById, true, selectedAssignment, currentView);
+        String weakestArea = resolveAreaLabel(topicTotals, topicsById, false, selectedAssignment, currentView);
+        String filterLabel = resolvePerformanceFilterLabel(resolvedSubject, selectedTopic, selectedAssignment, currentView);
+
+        List<TeacherPerformanceOverviewDto.HeatmapCell> cells = new ArrayList<>();
+        int supportCount = 0;
+        int onTrackCount = 0;
+        int studentsWithData = 0;
+        double scoreTotal = 0.0;
+
+        for (User student : students) {
+            UUID studentIdValue = student.getId();
+            StudentProfile profile = profileByStudent.get(studentIdValue);
+            StudentPlan primaryPlan = selectPrimaryPlan(plansByStudent.getOrDefault(studentIdValue, List.of()));
+
+            Double score = resolvePerformanceCellScore(profile, studentTotals.get(studentIdValue), resultByStudent.get(studentIdValue), currentView);
+            if (score != null) {
+                studentsWithData += 1;
+                scoreTotal += score;
+                if (score < 55.0) {
+                    supportCount += 1;
+                }
+                if (score >= 75.0) {
+                    onTrackCount += 1;
+                }
+            }
+
+            String focusArea = resolveStudentFocusArea(studentTopicTotals.get(studentIdValue), topicsById, currentView, selectedTopic, selectedAssignment);
+            cells.add(TeacherPerformanceOverviewDto.HeatmapCell.builder()
+                .studentId(studentIdValue.toString())
+                .firstName(student.getFirstName())
+                .lastName(student.getLastName())
+                .email(student.getEmail())
+                .score(score != null ? roundTwo(score) : null)
+                .intensity(resolveHeatmapIntensity(score))
+                .status(resolveHeatmapStatus(score))
+                .performance(resolvePerformance(profile))
+                .engagement(profile != null ? profile.getEngagement() : null)
+                .strength(profile != null ? profile.getStrength() : null)
+                .className(primaryClassNameByStudent.get(studentIdValue))
+                .activePlanName(primaryPlan != null && primaryPlan.getPlan() != null ? primaryPlan.getPlan().getName() : null)
+                .planProgress(primaryPlan != null ? primaryPlan.getCurrentProgress() : null)
+                .latestAssessmentName(selectedAssignment != null && selectedAssignment.getAssessment() != null
+                    ? selectedAssignment.getAssessment().getName()
+                    : null)
+                .latestAssessmentScore(score != null && "assessment".equals(currentView) ? roundTwo(score) : null)
+                .focusArea(focusArea)
+                .note(buildPerformanceNote(currentView, score, focusArea))
+                .build());
+        }
+
+        double averageScore = studentsWithData > 0 ? scoreTotal / studentsWithData : 0.0;
+
+        return TeacherPerformanceOverviewDto.builder()
+            .teacherId(teacherId.toString())
+            .subjectId(resolvedSubject != null ? resolvedSubject.getId().toString() : (subjectId != null ? subjectId.toString() : null))
+            .subjectName(resolvedSubject != null ? resolvedSubject.getName() : null)
+            .topicId(selectedTopic != null ? selectedTopic.getId().toString() : (topicId != null ? topicId.toString() : null))
+            .topicName(selectedTopic != null ? selectedTopic.getName() : null)
+            .assessmentId(selectedAssignment != null ? selectedAssignment.getId().toString() : (assessmentId != null ? assessmentId.toString() : null))
+            .assessmentName(selectedAssignment != null && selectedAssignment.getAssessment() != null
+                ? selectedAssignment.getAssessment().getName()
+                : null)
+            .currentView(currentView)
+            .summary(TeacherPerformanceOverviewDto.Summary.builder()
+                .totalStudents(students.size())
+                .studentsWithData(studentsWithData)
+                .supportCount(supportCount)
+                .onTrackCount(onTrackCount)
+                .averageScore(roundTwo(averageScore))
+                .filterLabel(filterLabel)
+                .strongestArea(strongestArea)
+                .weakestArea(weakestArea)
+                .build())
+            .heatmap(TeacherPerformanceOverviewDto.Heatmap.builder()
+                .columns(12)
+                .cells(cells)
+                .build())
+            .misconceptions(buildMisconceptionSignals(topicTotals, learnersByTopic, topicsById, currentView, selectedAssignment))
+            .build();
+    }
+
     public PageResponse<AssessmentAttempt> getTeacherPendingSubmissionsRaw(UUID teacherId,
                                                                             UUID subjectId,
                                                                             UUID classId,
@@ -962,6 +1193,243 @@ public class TeacherService {
 
     private double roundTwo(double value) {
         return Math.round(value * 100.0) / 100.0;
+    }
+
+    private TeacherPerformanceOverviewDto emptyPerformanceOverview(UUID teacherId,
+                                                                   UUID subjectId,
+                                                                   String subjectName,
+                                                                   UUID topicId,
+                                                                   String topicName,
+                                                                   UUID assessmentId,
+                                                                   String assessmentName,
+                                                                   String currentView) {
+        return TeacherPerformanceOverviewDto.builder()
+            .teacherId(teacherId.toString())
+            .subjectId(subjectId != null ? subjectId.toString() : null)
+            .subjectName(subjectName)
+            .topicId(topicId != null ? topicId.toString() : null)
+            .topicName(topicName)
+            .assessmentId(assessmentId != null ? assessmentId.toString() : null)
+            .assessmentName(assessmentName)
+            .currentView(currentView)
+            .summary(TeacherPerformanceOverviewDto.Summary.builder()
+                .totalStudents(0)
+                .studentsWithData(0)
+                .supportCount(0)
+                .onTrackCount(0)
+                .averageScore(0.0)
+                .filterLabel("No data")
+                .strongestArea("No strong pattern yet")
+                .weakestArea("No weak pattern yet")
+                .build())
+            .heatmap(TeacherPerformanceOverviewDto.Heatmap.builder()
+                .columns(12)
+                .cells(List.of())
+                .build())
+            .misconceptions(List.of())
+            .build();
+    }
+
+    private boolean isMoreRecentResult(AssessmentResult left, AssessmentResult right) {
+        Instant leftInstant = left.getSubmittedAt() != null ? left.getSubmittedAt() : left.getCreatedAt();
+        Instant rightInstant = right.getSubmittedAt() != null ? right.getSubmittedAt() : right.getCreatedAt();
+        if (leftInstant == null) {
+            return false;
+        }
+        if (rightInstant == null) {
+            return true;
+        }
+        return leftInstant.isAfter(rightInstant);
+    }
+
+    private Double resolvePerformanceCellScore(StudentProfile profile,
+                                               double[] studentTopicTotal,
+                                               AssessmentResult assessmentResult,
+                                               String currentView) {
+        if ("assessment".equals(currentView)) {
+            return percentFromAssessmentResult(assessmentResult);
+        }
+        if (studentTopicTotal != null && studentTopicTotal.length >= 2 && studentTopicTotal[1] > 0) {
+            return (studentTopicTotal[0] / studentTopicTotal[1]) * 100.0;
+        }
+        return profile != null ? profile.getOverall() : null;
+    }
+
+    private Double percentFromAssessmentResult(AssessmentResult result) {
+        if (result == null) {
+            return null;
+        }
+        Double actual = result.getActualMark();
+        Double expected = result.getExpectedMark();
+        if (actual == null) {
+            return null;
+        }
+        if (expected != null && expected > 0) {
+            return Math.max(0.0, Math.min(100.0, (actual / expected) * 100.0));
+        }
+        return Math.max(0.0, Math.min(100.0, actual));
+    }
+
+    private String resolveStudentFocusArea(Map<UUID, double[]> topicTotals,
+                                           Map<UUID, Topic> topicsById,
+                                           String currentView,
+                                           Topic selectedTopic,
+                                           AssessmentAssignment selectedAssignment) {
+        if ("topic".equals(currentView) && selectedTopic != null) {
+            return selectedTopic.getName();
+        }
+        if ("assessment".equals(currentView) && selectedAssignment != null && (topicTotals == null || topicTotals.isEmpty())) {
+            return selectedAssignment.getAssessment() != null ? selectedAssignment.getAssessment().getName() : "Assessment";
+        }
+        if (topicTotals == null || topicTotals.isEmpty()) {
+            return null;
+        }
+        return topicTotals.entrySet().stream()
+            .filter(entry -> entry.getValue() != null && entry.getValue().length >= 2 && entry.getValue()[1] > 0)
+            .min(Comparator.comparing(entry -> entry.getValue()[0] / entry.getValue()[1]))
+            .map(Map.Entry::getKey)
+            .map(topicsById::get)
+            .map(Topic::getName)
+            .orElse(null);
+    }
+
+    private int resolveHeatmapIntensity(Double score) {
+        if (score == null) {
+            return 0;
+        }
+        if (score >= 85.0) {
+            return 5;
+        }
+        if (score >= 70.0) {
+            return 4;
+        }
+        if (score >= 55.0) {
+            return 3;
+        }
+        if (score >= 40.0) {
+            return 2;
+        }
+        return 1;
+    }
+
+    private String resolveHeatmapStatus(Double score) {
+        if (score == null) {
+            return "No data";
+        }
+        if (score >= 75.0) {
+            return "On track";
+        }
+        if (score >= 55.0) {
+            return "Watch";
+        }
+        return "Needs support";
+    }
+
+    private String resolvePerformanceFilterLabel(Subject subject,
+                                                 Topic topic,
+                                                 AssessmentAssignment assignment,
+                                                 String currentView) {
+        if ("assessment".equals(currentView) && assignment != null && assignment.getAssessment() != null) {
+            return assignment.getAssessment().getName();
+        }
+        if ("topic".equals(currentView) && topic != null) {
+            return topic.getName();
+        }
+        return subject != null ? subject.getName() : "Class performance";
+    }
+
+    private String resolveAreaLabel(Map<UUID, double[]> topicTotals,
+                                    Map<UUID, Topic> topicsById,
+                                    boolean strongest,
+                                    AssessmentAssignment assignment,
+                                    String currentView) {
+        if (topicTotals == null || topicTotals.isEmpty()) {
+            if ("assessment".equals(currentView) && assignment != null && assignment.getAssessment() != null) {
+                return assignment.getAssessment().getName();
+            }
+            return strongest ? "No pattern yet" : "No pattern yet";
+        }
+        return topicTotals.entrySet().stream()
+            .filter(entry -> entry.getValue() != null && entry.getValue().length >= 2 && entry.getValue()[1] > 0)
+            .sorted((left, right) -> {
+                double leftValue = left.getValue()[0] / left.getValue()[1];
+                double rightValue = right.getValue()[0] / right.getValue()[1];
+                return strongest ? Double.compare(rightValue, leftValue) : Double.compare(leftValue, rightValue);
+            })
+            .map(Map.Entry::getKey)
+            .map(topicsById::get)
+            .filter(Objects::nonNull)
+            .map(Topic::getName)
+            .findFirst()
+            .orElse("No pattern yet");
+    }
+
+    private String buildPerformanceNote(String currentView, Double score, String focusArea) {
+        if (score == null) {
+            return "No scored evidence yet for this filter.";
+        }
+        if ("assessment".equals(currentView)) {
+            return score >= 55.0
+                ? "This learner is coping with the current assessment."
+                : "This learner may need reteaching before the next assessment.";
+        }
+        if (focusArea != null && !focusArea.isBlank()) {
+            return score >= 55.0
+                ? "Current evidence is steady. Watch whether performance holds across " + focusArea + "."
+                : "Watch for misconceptions in " + focusArea + ".";
+        }
+        return score >= 55.0
+            ? "Current evidence is steady."
+            : "Current evidence suggests the learner needs support.";
+    }
+
+    private List<TeacherPerformanceOverviewDto.MisconceptionSignal> buildMisconceptionSignals(
+        Map<UUID, double[]> topicTotals,
+        Map<UUID, Set<UUID>> learnersByTopic,
+        Map<UUID, Topic> topicsById,
+        String currentView,
+        AssessmentAssignment selectedAssignment
+    ) {
+        if (topicTotals == null || topicTotals.isEmpty()) {
+            if ("assessment".equals(currentView) && selectedAssignment != null && selectedAssignment.getAssessment() != null) {
+                return List.of(
+                    TeacherPerformanceOverviewDto.MisconceptionSignal.builder()
+                        .id("assessment-overview")
+                        .title(selectedAssignment.getAssessment().getName())
+                        .summary("This assessment has too little scored topic evidence yet. Use the heatmap and hover cards to spot learners who have not submitted or are underperforming.")
+                        .riskLevel("watch")
+                        .learnerCount(0)
+                        .averageScore(0.0)
+                        .studentIds(List.of())
+                        .build()
+                );
+            }
+            return List.of();
+        }
+
+        return topicTotals.entrySet().stream()
+            .filter(entry -> entry.getValue() != null && entry.getValue().length >= 2 && entry.getValue()[1] > 0)
+            .sorted(Comparator.comparing(entry -> entry.getValue()[0] / entry.getValue()[1]))
+            .limit(4)
+            .map(entry -> {
+                double average = (entry.getValue()[0] / entry.getValue()[1]) * 100.0;
+                Topic topic = topicsById.get(entry.getKey());
+                List<String> studentIds = new ArrayList<>(learnersByTopic.getOrDefault(entry.getKey(), Set.of())).stream()
+                    .map(UUID::toString)
+                    .toList();
+                String topicName = topic != null ? topic.getName() : "This topic";
+                String riskLevel = average < 50.0 ? "high" : (average < 65.0 ? "medium" : "watch");
+                return TeacherPerformanceOverviewDto.MisconceptionSignal.builder()
+                    .id(entry.getKey().toString())
+                    .title(topicName)
+                    .summary("Learners are showing weak understanding here. Recheck definitions, worked examples, and the step where answers usually break down.")
+                    .riskLevel(riskLevel)
+                    .learnerCount(studentIds.size())
+                    .averageScore(roundTwo(average))
+                    .studentIds(studentIds)
+                    .build();
+            })
+            .toList();
     }
 
     private PageResponse<TeacherStudentSummaryDto> emptyPage(int page, int size) {

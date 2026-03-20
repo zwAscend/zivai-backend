@@ -701,25 +701,24 @@ public class StudentService {
             .map(UUID::toString)
             .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        List<String> completedStepIds = (request.getCompletedStepIds() == null ? List.<String>of() : request.getCompletedStepIds()).stream()
-            .filter(Objects::nonNull)
-            .map(String::trim)
-            .filter(id -> !id.isBlank() && validStepIds.contains(id))
-            .distinct()
-            .toList();
+        List<String> completedStepIds = sanitizePlanRuntimeStepIds(
+            request.getCompletedStepIds() == null ? readCompletedStepIds(studentPlan) : request.getCompletedStepIds(),
+            validStepIds
+        );
 
-        String activeStepId = request.getActiveStepId();
-        if (activeStepId != null) {
-            activeStepId = activeStepId.trim();
-            if (activeStepId.isBlank() || !validStepIds.contains(activeStepId)) {
-                activeStepId = null;
-            }
-        }
+        String activeStepId = normalizePlanRuntimeStepId(
+            request.getActiveStepId() != null
+                ? request.getActiveStepId()
+                : studentPlan.getActiveStepId() == null ? null : studentPlan.getActiveStepId().toString(),
+            validStepIds
+        );
 
         int totalSteps = planSteps.size();
         int completedSteps = Math.min(completedStepIds.size(), totalSteps);
         double progress = totalSteps == 0 ? 0.0 : roundOneDecimal((completedSteps * 100.0) / totalSteps);
         studentPlan.setCurrentProgress(progress);
+        studentPlan.setCompletedStepIds(objectMapper.valueToTree(completedStepIds));
+        studentPlan.setActiveStepId(activeStepId == null ? null : UUID.fromString(activeStepId));
 
         if (request.getStatus() != null && !request.getStatus().isBlank()) {
             studentPlan.setStatus(normalizePlanRuntimeStatus(request.getStatus()));
@@ -736,8 +735,8 @@ public class StudentService {
         return StudentPlanRuntimeProgressDto.builder()
             .studentPlanId(savedPlan.getId().toString())
             .studentId(savedPlan.getStudent().getId().toString())
-            .activeStepId(activeStepId)
-            .completedStepIds(completedStepIds)
+            .activeStepId(savedPlan.getActiveStepId() == null ? null : savedPlan.getActiveStepId().toString())
+            .completedStepIds(readCompletedStepIds(savedPlan))
             .totalSteps(totalSteps)
             .completedSteps(completedSteps)
             .currentProgress(roundOneDecimal(savedPlan.getCurrentProgress() == null ? 0.0 : savedPlan.getCurrentProgress()))
@@ -1562,6 +1561,47 @@ public class StudentService {
             case "on_hold", "on hold", "paused" -> "on_hold";
             default -> "active";
         };
+    }
+
+    private List<String> readCompletedStepIds(StudentPlan studentPlan) {
+        if (studentPlan == null || studentPlan.getCompletedStepIds() == null || !studentPlan.getCompletedStepIds().isArray()) {
+            return List.of();
+        }
+
+        List<String> values = new ArrayList<>();
+        studentPlan.getCompletedStepIds().forEach(node -> {
+            if (node != null && !node.isNull()) {
+                String value = node.asText("").trim();
+                if (!value.isBlank()) {
+                    values.add(value);
+                }
+            }
+        });
+        return values;
+    }
+
+    private List<String> sanitizePlanRuntimeStepIds(List<String> candidateStepIds, Set<String> validStepIds) {
+        if (candidateStepIds == null || candidateStepIds.isEmpty() || validStepIds == null || validStepIds.isEmpty()) {
+            return List.of();
+        }
+
+        return candidateStepIds.stream()
+            .filter(Objects::nonNull)
+            .map(String::trim)
+            .filter(id -> !id.isBlank() && validStepIds.contains(id))
+            .distinct()
+            .toList();
+    }
+
+    private String normalizePlanRuntimeStepId(String candidateStepId, Set<String> validStepIds) {
+        if (candidateStepId == null) {
+            return null;
+        }
+        String normalized = candidateStepId.trim();
+        if (normalized.isBlank() || validStepIds == null || !validStepIds.contains(normalized)) {
+            return null;
+        }
+        return normalized;
     }
 
     private List<StudentDto> listByClassSubject(UUID classSubjectId) {

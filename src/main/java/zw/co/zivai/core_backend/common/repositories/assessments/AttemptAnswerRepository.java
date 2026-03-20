@@ -80,6 +80,28 @@ public interface AttemptAnswerRepository extends JpaRepository<AttemptAnswer, UU
                                                              @Param("studentId") UUID studentId);
 
     @Query("""
+        select new zw.co.zivai.core_backend.common.dtos.assessments.TopicAnswerStat(
+            q.topic.id,
+            ae.student.id,
+            aq.id,
+            coalesce(aa.humanScore, aa.aiScore, 0),
+            aa.maxScore
+        )
+        from AttemptAnswer aa
+        join aa.assessmentQuestion aq
+        join aq.question q
+        join aa.assessmentAttempt at
+        join at.assessmentEnrollment ae
+        where ae.assessmentAssignment.id = :assessmentAssignmentId
+          and aa.deletedAt is null
+          and aq.deletedAt is null
+          and q.deletedAt is null
+          and at.deletedAt is null
+          and ae.deletedAt is null
+    """)
+    List<TopicAnswerStat> findTopicStatsByAssessmentAssignment(@Param("assessmentAssignmentId") UUID assessmentAssignmentId);
+
+    @Query("""
         select new zw.co.zivai.core_backend.common.dtos.assessments.SubjectTopicAnswerStat(
             q.subject.id,
             q.topic.id,
