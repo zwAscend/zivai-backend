@@ -668,7 +668,7 @@ CREATE TABLE IF NOT EXISTS lms.assessments (
   name varchar(255) NOT NULL,
   description text,
 
-  assessment_type varchar(16) NOT NULL CHECK (assessment_type IN ('quiz','test','assignment','project','exam')),
+  assessment_type varchar(16) NOT NULL CHECK (assessment_type IN ('quiz','test','assignment','project','exam','practice')),
   visibility varchar(16) NOT NULL DEFAULT 'private' CHECK (visibility IN ('private','shared','school')),
 
   time_limit_min int,
@@ -1801,7 +1801,12 @@ CREATE TABLE IF NOT EXISTS lms.notifications (
   recipient_id uuid NOT NULL REFERENCES lms.users(id) ON DELETE CASCADE,
 
   notif_type varchar(32) NOT NULL
-    CHECK (notif_type IN ('assignment_graded','assignment_submitted','plan_assigned','message_received')),
+    CHECK (notif_type IN (
+      'assignment_graded','assignment_submitted','plan_assigned','message_received',
+      'assessment_assigned','assessment_published','assessment_deadline_changed','assessment_submitted',
+      'development_plan_assigned','development_plan_updated','development_plan_published','development_plan_unpublished',
+      'resource_published'
+    )),
 
   title varchar(255) NOT NULL,
   message text NOT NULL,

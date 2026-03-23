@@ -229,4 +229,40 @@ public interface AssessmentAttemptRepository extends JpaRepository<AssessmentAtt
     List<AssessmentAttempt> findStudentSessionHistory(@Param("studentId") UUID studentId,
                                                       @Param("subjectId") UUID subjectId,
                                                       @Param("submissionTypes") Collection<String> submissionTypes);
+
+    @EntityGraph(attributePaths = {
+        "assessmentEnrollment",
+        "assessmentEnrollment.student",
+        "assessmentEnrollment.assessmentAssignment",
+        "assessmentEnrollment.assessmentAssignment.assessment",
+        "assessmentEnrollment.assessmentAssignment.assessment.subject"
+    })
+    @Query("""
+        select at
+        from AssessmentAttempt at
+        join at.assessmentEnrollment ae
+        join ae.assessmentAssignment aa
+        join aa.assessment a
+        join a.subject s
+        where ae.student.id = :studentId
+          and s.id = :subjectId
+          and at.submittedAt is null
+          and at.deletedAt is null
+          and ae.deletedAt is null
+          and aa.deletedAt is null
+          and a.deletedAt is null
+          and s.deletedAt is null
+          and lower(coalesce(a.assessmentType, '')) = 'practice'
+          and lower(coalesce(a.visibility, '')) = 'private'
+          and lower(coalesce(at.submissionType, '')) = lower(:submissionType)
+          and (
+                lower(coalesce(aa.title, '')) = lower(:title)
+                or lower(coalesce(a.name, '')) = lower(:title)
+              )
+        order by coalesce(at.startedAt, at.createdAt) desc, at.createdAt desc, at.id desc
+    """)
+    List<AssessmentAttempt> findActivePrivatePracticeSessions(@Param("studentId") UUID studentId,
+                                                              @Param("subjectId") UUID subjectId,
+                                                              @Param("submissionType") String submissionType,
+                                                              @Param("title") String title);
 }

@@ -6,6 +6,7 @@ import java.util.UUID;
 import java.util.Collection;
 
 import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,7 +20,13 @@ public interface AssessmentQuestionRepository extends JpaRepository<AssessmentQu
     @EntityGraph(attributePaths = {"question", "question.topic"})
     List<AssessmentQuestion> findByAssessment_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(UUID assessmentId);
     Optional<AssessmentQuestion> findByIdAndAssessment_IdAndDeletedAtIsNull(UUID id, UUID assessmentId);
-    void deleteByAssessment_Id(UUID assessmentId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+        delete from AssessmentQuestion aq
+        where aq.assessment.id = :assessmentId
+    """)
+    int deleteAllByAssessmentId(@Param("assessmentId") UUID assessmentId);
 
     @Query("""
         select aq.assessment.id, count(aq.id)

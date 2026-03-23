@@ -22,6 +22,14 @@ public interface AssessmentResultRepository extends JpaRepository<AssessmentResu
     @EntityGraph(attributePaths = {"student", "assessmentAssignment", "assessmentAssignment.assessment", "finalizedAttempt"})
     List<AssessmentResult> findByAssessmentAssignment_IdInAndStudent_IdAndDeletedAtIsNull(Collection<UUID> assessmentAssignmentIds,
                                                                                            UUID studentId);
+    @EntityGraph(attributePaths = {
+        "student",
+        "assessmentAssignment",
+        "assessmentAssignment.assessment",
+        "assessmentAssignment.assessment.subject",
+        "finalizedAttempt"
+    })
+    List<AssessmentResult> findByStudent_IdAndDeletedAtIsNull(UUID studentId);
     Optional<AssessmentResult> findFirstByAssessmentAssignment_IdAndStudent_Id(UUID assessmentAssignmentId, UUID studentId);
     List<AssessmentResult> findByStudent_Id(UUID studentId);
 
