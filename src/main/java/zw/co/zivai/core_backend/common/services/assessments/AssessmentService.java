@@ -110,7 +110,7 @@ public class AssessmentService {
 
         Assessment saved = assessmentRepository.save(assessment);
 
-        attachQuestions(saved, subject, createdBy, request.getQuestions());
+        attachQuestions(saved, subject, createdBy, request.getQuestions(), requiresCompleteQuestionRubric(saved.getStatus()));
 
         return saved;
     }
@@ -173,8 +173,12 @@ public class AssessmentService {
         Assessment saved = assessmentRepository.save(assessment);
 
         if (request.getQuestions() != null) {
-            assessmentQuestionRepository.deleteByAssessment_Id(saved.getId());
-            attachQuestions(saved, saved.getSubject(), saved.getLastModifiedBy(), request.getQuestions());
+            replaceAssessmentQuestions(
+                saved,
+                saved.getSubject(),
+                saved.getLastModifiedBy(),
+                request.getQuestions()
+            );
         }
 
         return saved;
@@ -204,7 +208,14 @@ public class AssessmentService {
         User author = assessment.getLastModifiedBy() != null ? assessment.getLastModifiedBy() : assessment.getCreatedBy();
 
         int order = maxSequence + 1;
-        attachQuestions(assessment, subject, author, questions, order);
+        attachQuestions(
+            assessment,
+            subject,
+            author,
+            questions,
+            order,
+            requiresCompleteQuestionRubric(assessment.getStatus())
+        );
 
         return getWithQuestions(assessmentId);
     }
@@ -212,14 +223,9 @@ public class AssessmentService {
     @Transactional
     public AssessmentWithQuestionsDto replaceQuestions(UUID assessmentId, List<CreateAssessmentQuestionRequest> questions) {
         Assessment assessment = get(assessmentId);
-        assessmentQuestionRepository.deleteByAssessment_Id(assessmentId);
-        if (questions == null || questions.isEmpty()) {
-            return getWithQuestions(assessmentId);
-        }
-
         Subject subject = assessment.getSubject();
         User author = assessment.getLastModifiedBy() != null ? assessment.getLastModifiedBy() : assessment.getCreatedBy();
-        attachQuestions(assessment, subject, author, questions);
+        replaceAssessmentQuestions(assessment, subject, author, questions);
         return getWithQuestions(assessmentId);
     }
 
@@ -255,7 +261,7 @@ public class AssessmentService {
 
     public AssessmentWithQuestionsDto getWithQuestions(UUID id) {
         Assessment assessment = get(id);
-        List<AssessmentQuestionDto> questions = assessmentQuestionRepository.findByAssessment_IdOrderBySequenceIndexAsc(id).stream()
+        List<AssessmentQuestionDto> questions = assessmentQuestionRepository.findByAssessment_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(id).stream()
             .map(assessmentQuestion -> {
                 Question question = assessmentQuestion.getQuestion();
                 return AssessmentQuestionDto.builder()
@@ -296,8 +302,34 @@ public class AssessmentService {
             .build();
     }
 
+    private void replaceAssessmentQuestions(Assessment assessment,
+                                            Subject subject,
+                                            User author,
+                                            List<CreateAssessmentQuestionRequest> questions) {
+        assessmentQuestionRepository.deleteAllByAssessmentId(assessment.getId());
+        assessmentQuestionRepository.flush();
+        if (questions == null || questions.isEmpty()) {
+            return;
+        }
+        attachQuestions(
+            assessment,
+            subject,
+            author,
+            questions,
+            requiresCompleteQuestionRubric(assessment.getStatus())
+        );
+    }
+
     private void attachQuestions(Assessment assessment, Subject subject, User author, List<CreateAssessmentQuestionRequest> questions) {
-        attachQuestions(assessment, subject, author, questions, 1);
+        attachQuestions(assessment, subject, author, questions, requiresCompleteQuestionRubric(assessment.getStatus()));
+    }
+
+    private void attachQuestions(Assessment assessment,
+                                 Subject subject,
+                                 User author,
+                                 List<CreateAssessmentQuestionRequest> questions,
+                                 boolean requireMandatoryAnswer) {
+        attachQuestions(assessment, subject, author, questions, 1, requireMandatoryAnswer);
     }
 
     private void attachQuestions(Assessment assessment,
@@ -305,12 +337,28 @@ public class AssessmentService {
                                  User author,
                                  List<CreateAssessmentQuestionRequest> questions,
                                  int startingOrder) {
+        attachQuestions(
+            assessment,
+            subject,
+            author,
+            questions,
+            startingOrder,
+            requiresCompleteQuestionRubric(assessment.getStatus())
+        );
+    }
+
+    private void attachQuestions(Assessment assessment,
+                                 Subject subject,
+                                 User author,
+                                 List<CreateAssessmentQuestionRequest> questions,
+                                 int startingOrder,
+                                 boolean requireMandatoryAnswer) {
         if (questions == null || questions.isEmpty()) {
             return;
         }
         List<Question> questionsToPersist = new ArrayList<>();
         for (var questionRequest : questions) {
-            validateQuestionRequest(questionRequest);
+            validateQuestionRequest(questionRequest, requireMandatoryAnswer);
             questionsToPersist.add(buildQuestion(subject, author, questionRequest));
         }
 
@@ -374,7 +422,7 @@ public class AssessmentService {
         return RUBRIC_JSON_MAPPER.convertValue(rubricJson, Object.class);
     }
 
-    private void validateQuestionRequest(CreateAssessmentQuestionRequest questionRequest) {
+    private void validateQuestionRequest(CreateAssessmentQuestionRequest questionRequest, boolean requireMandatoryAnswer) {
         if (questionRequest.getStem() == null || questionRequest.getStem().isBlank()) {
             throw new BadRequestException("Question stem is required");
         }
@@ -386,9 +434,13 @@ public class AssessmentService {
             throw new BadRequestException("Unsupported question type: " + questionRequest.getQuestionTypeCode());
         }
         JsonNode rubricNode = toRubricJson(questionRequest.getRubricJson());
-        if (!hasMandatoryAnswer(normalizedQuestionType, rubricNode)) {
+        if (requireMandatoryAnswer && !hasMandatoryAnswer(normalizedQuestionType, rubricNode)) {
             throw new BadRequestException("Each question must include at least one expected/correct answer.");
         }
+    }
+
+    private boolean requiresCompleteQuestionRubric(String status) {
+        return status != null && "published".equalsIgnoreCase(status.trim());
     }
 
     private String normalizeQuestionTypeCodeForStorage(String rawQuestionTypeCode) {

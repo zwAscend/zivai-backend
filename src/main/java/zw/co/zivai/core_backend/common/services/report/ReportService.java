@@ -267,13 +267,15 @@ public class ReportService {
             ? classRepository.findByIdAndDeletedAtIsNull(classId).orElse(null)
             : null;
 
+        double normalizedClassAverage = clampPercent(classAverage);
+
         return ClassReportDto.builder()
             .subjectId(subject != null ? subject.getId().toString() : null)
             .subjectName(subject != null ? subject.getName() : null)
             .classId(classEntity != null ? classEntity.getId().toString() : null)
             .className(classEntity != null ? classEntity.getName() : null)
-            .classAveragePercent(roundOneDecimal(classAverage))
-            .predictedGrade(gradeFromPercent(classAverage))
+            .classAveragePercent(roundOneDecimal(normalizedClassAverage))
+            .predictedGrade(gradeFromPercent(normalizedClassAverage))
             .studentCount(studentAverages.size())
             .assessmentCount(!attempts.isEmpty() ? attempts.size() : results.size())
             .gradeDistribution(gradeDistribution)
@@ -391,13 +393,15 @@ public class ReportService {
                 .toList();
         }
 
+        double normalizedAveragePercent = clampPercent(averagePercent);
+
         return StudentReportDto.builder()
             .studentId(student != null ? student.getId().toString() : studentId.toString())
             .studentName(student != null ? student.getFirstName() + " " + student.getLastName() : null)
             .subjectId(subject != null ? subject.getId().toString() : null)
             .subjectName(subject != null ? subject.getName() : null)
-            .averagePercent(roundOneDecimal(averagePercent))
-            .predictedGrade(gradeFromPercent(averagePercent))
+            .averagePercent(roundOneDecimal(normalizedAveragePercent))
+            .predictedGrade(gradeFromPercent(normalizedAveragePercent))
             .assessmentCount(assessmentSummaries.size())
             .assessments(assessmentSummaries)
             .masteryGaps(masteryGaps)
@@ -444,6 +448,37 @@ public class ReportService {
             assessmentCountBySubject.compute(subjectId, (key, value) -> value == null ? 1 : value + 1);
         }
 
+        Map<UUID, double[]> resultTotalsBySubject = new HashMap<>();
+        Map<UUID, Integer> resultCountBySubject = new HashMap<>();
+        List<AssessmentResult> results = assessmentResultRepository.findByStudent_IdAndDeletedAtIsNull(studentId);
+        for (AssessmentResult result : results) {
+            Subject subject = result.getAssessmentAssignment() != null
+                && result.getAssessmentAssignment().getAssessment() != null
+                ? result.getAssessmentAssignment().getAssessment().getSubject()
+                : null;
+            if (subject == null || subject.getDeletedAt() != null) {
+                continue;
+            }
+
+            subjectById.putIfAbsent(subject.getId(), subject);
+
+            // Prefer attempt-derived grades when present; use result rows only as a fallback.
+            if (assessmentTotalsBySubject.containsKey(subject.getId())) {
+                continue;
+            }
+
+            Double percent = percentFromResult(result);
+            if (percent == null) {
+                continue;
+            }
+
+            UUID subjectId = subject.getId();
+            double[] totals = resultTotalsBySubject.computeIfAbsent(subjectId, key -> new double[] {0, 0});
+            totals[0] += percent;
+            totals[1] += 1;
+            resultCountBySubject.compute(subjectId, (key, value) -> value == null ? 1 : value + 1);
+        }
+
         Map<UUID, double[]> masteryTotalsBySubject = new HashMap<>();
         List<SubjectTopicAnswerStat> topicStats = attemptAnswerRepository.findTopicStatsByStudent(studentId);
         for (SubjectTopicAnswerStat stat : topicStats) {
@@ -465,13 +500,16 @@ public class ReportService {
                 double masteryPercent = 0;
                 double[] masteryTotals = masteryTotalsBySubject.get(subjectId);
                 if (masteryTotals != null && masteryTotals[1] > 0) {
-                    masteryPercent = (masteryTotals[0] / masteryTotals[1]) * 100.0;
+                    masteryPercent = clampPercent((masteryTotals[0] / masteryTotals[1]) * 100.0);
                 }
 
                 double assessmentAveragePercent = 0;
                 double[] assessmentTotals = assessmentTotalsBySubject.get(subjectId);
+                if ((assessmentTotals == null || assessmentTotals[1] == 0) && resultTotalsBySubject.containsKey(subjectId)) {
+                    assessmentTotals = resultTotalsBySubject.get(subjectId);
+                }
                 if (assessmentTotals != null && assessmentTotals[1] > 0) {
-                    assessmentAveragePercent = assessmentTotals[0] / assessmentTotals[1];
+                    assessmentAveragePercent = clampPercent(assessmentTotals[0] / assessmentTotals[1]);
                 }
 
                 double currentPercent = masteryPercent > 0 ? masteryPercent : assessmentAveragePercent;
@@ -479,6 +517,8 @@ public class ReportService {
                     (masteryPercent > 0 && assessmentAveragePercent > 0)
                         ? (masteryPercent * 0.6) + (assessmentAveragePercent * 0.4)
                         : currentPercent;
+                currentPercent = clampPercent(currentPercent);
+                predictedPercent = clampPercent(predictedPercent);
 
                 return StudentReportCardSubjectDto.builder()
                     .subjectId(subjectId.toString())
@@ -487,7 +527,11 @@ public class ReportService {
                     .masteryPercent(roundOneDecimal(masteryPercent))
                     .currentGrade(gradeFromPercent(currentPercent))
                     .predictedZimsecGrade(gradeFromPercent(predictedPercent))
-                    .assessmentCount(assessmentCountBySubject.getOrDefault(subjectId, 0))
+                    .assessmentCount(
+                        assessmentCountBySubject.containsKey(subjectId)
+                            ? assessmentCountBySubject.get(subjectId)
+                            : resultCountBySubject.getOrDefault(subjectId, 0)
+                    )
                     .build();
             })
             .toList();
@@ -628,6 +672,10 @@ public class ReportService {
         return Math.round(value * 10.0) / 10.0;
     }
 
+    private double clampPercent(double value) {
+        return Math.max(0.0, Math.min(100.0, value));
+    }
+
     private String gradeFromPercent(double percent) {
         if (percent >= 80) return "A";
         if (percent >= 70) return "B";
@@ -652,16 +700,20 @@ public class ReportService {
         if (result == null) {
             return null;
         }
-        Double expected = result.getExpectedMark();
         Double actual = result.getActualMark();
-        if (expected != null && expected > 0 && actual != null) {
-            return (actual / expected) * 100.0;
-        }
         if (result.getFinalizedAttempt() != null) {
             Double fromAttempt = percentFromAttempt(result.getFinalizedAttempt());
             if (fromAttempt != null) {
                 return fromAttempt;
             }
+        }
+        Double maxScore = resolveMaxScore(result);
+        if (actual != null && maxScore != null && maxScore > 0) {
+            return clampPercent((actual / maxScore) * 100.0);
+        }
+        Double expected = result.getExpectedMark();
+        if (expected != null && expected > 0 && actual != null) {
+            return clampPercent((actual / expected) * 100.0);
         }
         return percentFromGrade(result.getGrade());
     }
@@ -690,6 +742,21 @@ public class ReportService {
         return assessment != null ? assessment.getMaxScore() : null;
     }
 
+    private Double resolveMaxScore(AssessmentResult result) {
+        if (result == null) {
+            return null;
+        }
+        if (result.getFinalizedAttempt() != null) {
+            Double attemptMaxScore = resolveMaxScore(result.getFinalizedAttempt());
+            if (attemptMaxScore != null && attemptMaxScore > 0) {
+                return attemptMaxScore;
+            }
+        }
+        AssessmentAssignment assignment = result.getAssessmentAssignment();
+        Assessment assessment = assignment != null ? assignment.getAssessment() : null;
+        return assessment != null ? assessment.getMaxScore() : null;
+    }
+
     private Double percentFromAttempt(AssessmentAttempt attempt) {
         Double maxScore = resolveMaxScore(attempt);
         if (maxScore == null || maxScore == 0) {
@@ -699,6 +766,6 @@ public class ReportService {
         if (score == null) {
             return null;
         }
-        return (score / maxScore) * 100.0;
+        return clampPercent((score / maxScore) * 100.0);
     }
 }

@@ -34,6 +34,8 @@ public interface StudentPlanRepository extends JpaRepository<StudentPlan, UUID> 
     Optional<StudentPlan> findByIdAndStudent_IdAndDeletedAtIsNull(UUID id, UUID studentId);
     @EntityGraph(attributePaths = {"student", "subject", "plan"})
     Optional<StudentPlan> findByStudent_IdAndPlan_Id(UUID studentId, UUID planId);
+    @EntityGraph(attributePaths = {"student", "subject", "plan"})
+    List<StudentPlan> findByPlan_IdAndDeletedAtIsNull(UUID planId);
 
     @EntityGraph(attributePaths = {"student", "subject", "plan"})
     List<StudentPlan> findByStudent_IdInAndDeletedAtIsNull(List<UUID> studentIds);

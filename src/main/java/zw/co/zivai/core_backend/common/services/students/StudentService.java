@@ -404,6 +404,10 @@ public class StudentService {
 
         School school = resolveStudentSchool(studentId);
         String title = resolvePracticeTitle(subject, topic, request != null ? request.getTitle() : null, mode);
+        AssessmentAttempt activeAttempt = findReusablePracticeSession(studentId, subjectId, mode, title);
+        if (activeAttempt != null) {
+            return resumePracticeSession(activeAttempt);
+        }
 
         Assessment assessment = new Assessment();
         assessment.setSchool(school);
@@ -1201,6 +1205,159 @@ public class StudentService {
             return ("topic_challenge".equals(mode) ? "Topic challenge: " : "Practice: ") + topic.getName().trim();
         }
         return ("topic_challenge".equals(mode) ? "Topic challenge: " : "Practice: ") + subjectName;
+    }
+
+    private AssessmentAttempt findReusablePracticeSession(UUID studentId,
+                                                          UUID subjectId,
+                                                          String mode,
+                                                          String title) {
+        if (title == null || title.isBlank()) {
+            return null;
+        }
+
+        List<AssessmentAttempt> activeAttempts = assessmentAttemptRepository.findActivePrivatePracticeSessions(
+            studentId,
+            subjectId,
+            mode,
+            title.trim()
+        );
+        if (activeAttempts.isEmpty()) {
+            return null;
+        }
+
+        AssessmentAttempt latestAttempt = activeAttempts.get(0);
+        if (activeAttempts.size() > 1) {
+            softDeletePracticeSessionDuplicates(activeAttempts.subList(1, activeAttempts.size()));
+        }
+        return latestAttempt;
+    }
+
+    private StudentPracticeSessionDto resumePracticeSession(AssessmentAttempt attempt) {
+        AssessmentEnrollment enrollment = attempt.getAssessmentEnrollment();
+        AssessmentAssignment assignment = enrollment.getAssessmentAssignment();
+        Assessment assessment = assignment.getAssessment();
+        List<AssessmentQuestion> assessmentQuestions =
+            assessmentQuestionRepository.findByAssessment_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(assessment.getId());
+        List<AttemptAnswer> answers =
+            attemptAnswerRepository.findByAssessmentAttempt_IdAndDeletedAtIsNull(attempt.getId());
+
+        return buildPracticeSessionDto(
+            attempt,
+            assessmentQuestions,
+            answers,
+            normalizePracticeMode(attempt.getSubmissionType()),
+            assignment.getTitle(),
+            resolveSingleTopic(assessmentQuestions),
+            true
+        );
+    }
+
+    private void softDeletePracticeSessionDuplicates(List<AssessmentAttempt> duplicateAttempts) {
+        if (duplicateAttempts == null || duplicateAttempts.isEmpty()) {
+            return;
+        }
+
+        Instant deletedAt = Instant.now();
+        List<AttemptAnswer> answersToDelete = new ArrayList<>();
+        List<AssessmentQuestion> questionsToDelete = new ArrayList<>();
+        List<AssessmentResult> resultsToDelete = new ArrayList<>();
+        List<AssessmentAttempt> attemptsToDelete = new ArrayList<>();
+        List<AssessmentEnrollment> enrollmentsToDelete = new ArrayList<>();
+        List<AssessmentAssignment> assignmentsToDelete = new ArrayList<>();
+        List<Assessment> assessmentsToDelete = new ArrayList<>();
+        Set<UUID> seenResultIds = new HashSet<>();
+
+        for (AssessmentAttempt duplicateAttempt : duplicateAttempts) {
+            if (duplicateAttempt == null || duplicateAttempt.getId() == null) {
+                continue;
+            }
+
+            duplicateAttempt.setDeletedAt(deletedAt);
+            attemptsToDelete.add(duplicateAttempt);
+
+            answersToDelete.addAll(
+                markDeleted(
+                    attemptAnswerRepository.findByAssessmentAttempt_IdAndDeletedAtIsNull(duplicateAttempt.getId()),
+                    deletedAt
+                )
+            );
+
+            AssessmentEnrollment enrollment = duplicateAttempt.getAssessmentEnrollment();
+            if (enrollment == null) {
+                continue;
+            }
+            enrollment.setDeletedAt(deletedAt);
+            enrollmentsToDelete.add(enrollment);
+
+            AssessmentAssignment assignment = enrollment.getAssessmentAssignment();
+            if (assignment == null) {
+                continue;
+            }
+
+            for (AssessmentResult result : assessmentResultRepository.findByAssessmentAssignment_IdAndDeletedAtIsNull(assignment.getId())) {
+                if (result != null && result.getId() != null && seenResultIds.add(result.getId())) {
+                    result.setDeletedAt(deletedAt);
+                    resultsToDelete.add(result);
+                }
+            }
+
+            assignment.setDeletedAt(deletedAt);
+            assignmentsToDelete.add(assignment);
+
+            Assessment assessment = assignment.getAssessment();
+            if (assessment == null) {
+                continue;
+            }
+
+            questionsToDelete.addAll(
+                markDeleted(
+                    assessmentQuestionRepository.findByAssessment_IdAndDeletedAtIsNullOrderBySequenceIndexAsc(assessment.getId()),
+                    deletedAt
+                )
+            );
+
+            assessment.setDeletedAt(deletedAt);
+            assessmentsToDelete.add(assessment);
+        }
+
+        if (!answersToDelete.isEmpty()) {
+            attemptAnswerRepository.saveAll(answersToDelete);
+        }
+        if (!questionsToDelete.isEmpty()) {
+            assessmentQuestionRepository.saveAll(questionsToDelete);
+        }
+        if (!resultsToDelete.isEmpty()) {
+            assessmentResultRepository.saveAll(resultsToDelete);
+        }
+        if (!attemptsToDelete.isEmpty()) {
+            assessmentAttemptRepository.saveAll(attemptsToDelete);
+        }
+        if (!enrollmentsToDelete.isEmpty()) {
+            assessmentEnrollmentRepository.saveAll(enrollmentsToDelete);
+        }
+        if (!assignmentsToDelete.isEmpty()) {
+            assessmentAssignmentRepository.saveAll(assignmentsToDelete);
+        }
+        if (!assessmentsToDelete.isEmpty()) {
+            assessmentRepository.saveAll(assessmentsToDelete);
+        }
+    }
+
+    private <T extends zw.co.zivai.core_backend.common.models.base.BaseEntity> List<T> markDeleted(List<T> entities,
+                                                                                                   Instant deletedAt) {
+        if (entities == null || entities.isEmpty()) {
+            return List.of();
+        }
+
+        List<T> result = new ArrayList<>(entities.size());
+        for (T entity : entities) {
+            if (entity == null || entity.getDeletedAt() != null) {
+                continue;
+            }
+            entity.setDeletedAt(deletedAt);
+            result.add(entity);
+        }
+        return result;
     }
 
     private void validateSessionOwner(UUID studentId, AssessmentAttempt attempt) {

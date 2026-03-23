@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -680,12 +681,16 @@ public class DevelopmentService {
         return toDevelopmentPlanDtos(List.of(studentPlanRepository.save(studentPlan))).get(0);
     }
 
+    @Transactional
     public DevelopmentPlanDto deleteStudentPlanStep(UUID studentPlanId, UUID stepId) {
         StudentPlan studentPlan = getStudentPlanEntity(studentPlanId);
         PlanStep step = planStepRepository.findByIdAndPlan_Id(stepId, studentPlan.getPlan().getId())
             .orElseThrow(() -> new NotFoundException("Plan step not found: " + stepId));
-        planStepRepository.delete(step);
+        List<StudentPlan> affectedPlans = studentPlanRepository.findByPlan_IdAndDeletedAtIsNull(studentPlan.getPlan().getId());
+        sanitizePlanRuntimeReferences(affectedPlans, stepId);
 
+        planStepRepository.delete(step);
+        planStepRepository.flush();
         List<PlanStep> remainingSteps = planStepRepository.findByPlan_IdOrderByStepOrderAsc(studentPlan.getPlan().getId());
         persistStepOrderingSafely(remainingSteps);
         notifyPlanUpdated(studentPlan, "A step was removed.");
@@ -1317,6 +1322,50 @@ public class DevelopmentService {
             }
         });
         return values;
+    }
+
+    private void sanitizePlanRuntimeReferences(List<StudentPlan> studentPlans, UUID removedStepId) {
+        if (studentPlans == null || studentPlans.isEmpty() || removedStepId == null) {
+            return;
+        }
+
+        String removedStepIdText = removedStepId.toString();
+        List<StudentPlan> dirtyPlans = new ArrayList<>();
+        for (StudentPlan plan : studentPlans) {
+            if (plan == null || plan.getDeletedAt() != null) {
+                continue;
+            }
+
+            boolean changed = false;
+            if (removedStepId.equals(plan.getActiveStepId())) {
+                plan.setActiveStepId(null);
+                changed = true;
+            }
+
+            List<String> completedStepIds = readCompletedStepIds(plan);
+            List<String> sanitizedCompletedStepIds = completedStepIds.stream()
+                .filter(value -> !removedStepIdText.equals(value))
+                .toList();
+            if (sanitizedCompletedStepIds.size() != completedStepIds.size()) {
+                plan.setCompletedStepIds(JsonNodeFactory.instance.arrayNode().addAll(
+                    sanitizedCompletedStepIds.stream()
+                        .map(JsonNodeFactory.instance::textNode)
+                        .toList()
+                ));
+                changed = true;
+            } else if (plan.getCompletedStepIds() == null) {
+                plan.setCompletedStepIds(JsonNodeFactory.instance.arrayNode());
+                changed = true;
+            }
+
+            if (changed) {
+                dirtyPlans.add(plan);
+            }
+        }
+
+        if (!dirtyPlans.isEmpty()) {
+            studentPlanRepository.saveAllAndFlush(dirtyPlans);
+        }
     }
 
     private String normalizeStatus(String value) {
